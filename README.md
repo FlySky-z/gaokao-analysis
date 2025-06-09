@@ -47,7 +47,7 @@ yarn add -D ts-node
 pnpm add -D ts-node
 ```
 
-3. 设置环境变量
+3. 设置环境变量(可选)
 
 创建`.env`文件并添加必要的环境变量：
 
@@ -67,7 +67,7 @@ AUTH_SECRET="your-secret-key"
 npx prisma generate
 
 # 创建并应用数据库迁移
-npx prisma migrate dev --name init
+npx prisma db push
 ```
 
 这将：
@@ -78,8 +78,7 @@ npx prisma migrate dev --name init
 5. 创建管理员用户
 
 ```bash
-# 运行创建管理员账户的脚本
-npx ts-node scripts/create-admin.ts
+make init
 ```
 
 脚本将自动创建一个默认管理员账户：
@@ -104,9 +103,6 @@ pnpm dev
 ### 登录系统
 
 使用在第5步创建的管理员账户登录系统：
-
-- 用户名: admin
-- 密码: admin
 
 登录成功后，您将被重定向到仪表盘页面(/dashboard)，在那里您可以开始使用系统的各项功能。
 
@@ -156,6 +152,27 @@ pnpm build
 ```
 
 ## 部署
+
+### Docker 部署 (推荐)
+
+使用Docker可以快速部署应用，无需配置复杂的环境：
+
+```bash
+# build
+make build
+```
+
+或通过docker/docker-compose.yml部署：
+
+```bash
+make compose-up
+```
+
+部署成功后访问 http://localhost:3000
+
+详细的Docker部署指南请参考：[DOCKER-DEPLOY.md](./DOCKER-DEPLOY.md)
+
+### Vercel 部署
 
 本项目可以部署到Vercel平台：
 

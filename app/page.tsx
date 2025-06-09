@@ -16,7 +16,7 @@ export default function Home() {
   const examEndDate = new Date(2025, 5, 8);
   const currentDate = new Date();
   const timeLeft = examEndDate.getTime() - currentDate.getTime();
-  const daysLeft = Math.max(0, Math.ceil(timeLeft / (1000 * 60 * 60 * 24)));
+  const daysLeft = Math.ceil(timeLeft / (1000 * 60 * 60 * 24));
   
   return (
     <div className="flex flex-col min-h-screen">
