@@ -1,0 +1,414 @@
+definitions:
+  models.APIResponse:
+    properties:
+      code:
+        type: integer
+      data: {}
+      msg:
+        type: string
+    type: object
+  models.Preference:
+    properties:
+      career_interest:
+        items:
+          type: string
+        type: array
+      graduation_plan:
+        items:
+          type: string
+        type: array
+      major_preference:
+        items:
+          type: string
+        type: array
+      other:
+        type: string
+      priority_strategy:
+        type: string
+      region_preference:
+        items:
+          type: string
+        type: array
+      target_universities:
+        items:
+          type: string
+        type: array
+      tuition_preference:
+        type: string
+    type: object
+  models.UserProfile:
+    properties:
+      created_at:
+        type: string
+      gender:
+        type: string
+      id:
+        type: string
+      preference:
+        $ref: '#/definitions/models.Preference'
+      province:
+        type: string
+      rank:
+        type: integer
+      score:
+        type: integer
+      subjects:
+        items:
+          type: string
+        type: array
+      updated_at:
+        type: string
+      username:
+        type: string
+    type: object
+  models.UserProfileRequest:
+    properties:
+      gender:
+        type: string
+      preference:
+        $ref: '#/definitions/models.Preference'
+      province:
+        type: string
+      rank:
+        type: integer
+      score:
+        type: integer
+      subjects:
+        items:
+          type: string
+        type: array
+      username:
+        type: string
+    type: object
+  models.VoluntaryMajor:
+    properties:
+      code:
+        description: 专业代码
+        type: string
+      id:
+        description: 专业id，ID 编号
+        type: integer
+      min_rank:
+        description: 录取最低位次
+        type: integer
+      min_score:
+        description: 录取最低分
+        type: integer
+      name:
+        description: 专业名称
+        type: string
+      plan_num:
+        description: 计划数
+        type: string
+      probability:
+        description: 录取概率，百分比
+        type: integer
+      strategy:
+        description: 策略
+        type: integer
+      study_cost:
+        description: 学费
+        type: string
+      study_year:
+        description: 学制
+        type: string
+      year:
+        description: 信息年份
+        type: string
+    type: object
+  models.VoluntaryMajorGroup:
+    properties:
+      group_code:
+        description: 专业组代码
+        type: string
+      major:
+        description: 专业，专业组内全部专业
+        items:
+          $ref: '#/definitions/models.VoluntaryMajor'
+        type: array
+      probability:
+        description: 专业组概率，百分比
+        type: integer
+      strategy:
+        description: 策略，[0冲、1稳、2保]
+        type: integer
+    type: object
+  models.VoluntaryMajorGroupRequest:
+    properties:
+      group_code:
+        description: 专业组代码
+        type: string
+      profile_id:
+        description: 档案id
+        type: string
+      province:
+        description: 报考的省份
+        type: string
+      rank:
+        description: 排名
+        type: integer
+      school_code:
+        description: 院校代码
+        type: string
+      score:
+        description: 分数
+        type: integer
+      strategy:
+        description: '[0冲、1稳、2保]，默认1稳'
+        type: integer
+      subjects:
+        description: 用户选择的科目
+        type: string
+    type: object
+  models.VoluntaryMajorGroupResponse:
+    properties:
+      code:
+        description: 响应码
+        type: integer
+      data:
+        $ref: '#/definitions/models.VoluntaryMajorGroup'
+      msg:
+        description: 响应消息
+        type: string
+    type: object
+  models.VoluntaryUniversityItem:
+    properties:
+      category:
+        description: 院校类型，综合、医药等
+        items:
+          type: string
+        type: array
+      major_group:
+        description: 专业组，可选专业组
+        items:
+          $ref: '#/definitions/models.VoluntaryMajorGroup'
+        type: array
+      province:
+        description: 院校所在省
+        type: string
+      recruit_code:
+        description: 院校代码
+        type: string
+      tags:
+        description: 院校标签，例如985、211等
+        items:
+          type: string
+        type: array
+      university_name:
+        description: 大学名称
+        type: string
+    type: object
+  models.VoluntaryUniversityPriorityData:
+    properties:
+      list:
+        items:
+          $ref: '#/definitions/models.VoluntaryUniversityItem'
+        type: array
+      page:
+        description: 页码
+        type: integer
+      page_num:
+        description: 页面总数
+        type: integer
+      page_size:
+        description: 页面大小
+        type: integer
+      total:
+        description: 总数目
+        type: integer
+    type: object
+  models.VoluntaryUniversityPriorityRequest:
+    properties:
+      citys:
+        description: 选择城市，使用逗号分隔（不选择省份，仅选择城市）
+        type: string
+      college_type:
+        description: 院校类型，使用逗号分隔，办学类型（公办），院校特色（211），院校类型（综合类），取交集
+        type: string
+      enrollment_plan:
+        description: 招生计划，使用逗号分隔
+        type: string
+      max_score:
+        description: 限制搜索最高分
+        type: string
+      min_score:
+        description: 限制搜索最低分
+        type: string
+      page:
+        description: 分页参数
+        type: integer
+      page_size:
+        type: integer
+      profile_id:
+        description: 档案id
+        type: string
+      province:
+        description: 报考的省份
+        type: string
+      rank:
+        description: 排名
+        type: integer
+      score:
+        description: 分数
+        type: integer
+      strategy:
+        description: '[0冲、1稳、2保]，默认1稳'
+        type: integer
+      subjects:
+        description: 用户选择的科目
+        type: string
+    type: object
+  models.VoluntaryUniversityPriorityResponse:
+    properties:
+      code:
+        description: 响应码
+        type: integer
+      data:
+        $ref: '#/definitions/models.VoluntaryUniversityPriorityData'
+      msg:
+        description: 响应消息
+        type: string
+    type: object
+info:
+  contact: {}
+paths:
+  /api/user-profiles:
+    post:
+      consumes:
+      - application/json
+      description: Create a new user profile with preferences
+      parameters:
+      - description: User Profile Info
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/models.UserProfileRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/models.APIResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/models.APIResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/models.APIResponse'
+      summary: Create a new user profile
+      tags:
+      - user-profiles
+  /api/user-profiles/{id}:
+    get:
+      consumes:
+      - application/json
+      description: Get a user profile by its ID
+      parameters:
+      - description: User Profile ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/models.UserProfile'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/models.APIResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/models.APIResponse'
+      summary: Get a user profile by ID
+      tags:
+      - user-profiles
+  /api/voluntary/majorGroupDetails:
+    post:
+      consumes:
+      - application/json
+      - multipart/form-data
+      - application/x-www-form-urlencoded
+      description: 根据用户条件查询专业组详情
+      parameters:
+      - description: 查询条件
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/models.VoluntaryMajorGroupRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/models.VoluntaryMajorGroupResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/models.APIResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/models.APIResponse'
+      summary: 查询专业组详情
+      tags:
+      - voluntary
+  /api/voluntary/universityPriority:
+    post:
+      consumes:
+      - application/json
+      - multipart/form-data
+      - application/x-www-form-urlencoded
+      description: 根据用户条件查询志愿-院校优先推荐
+      parameters:
+      - description: 查询条件
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/models.VoluntaryUniversityPriorityRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/models.VoluntaryUniversityPriorityResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/models.APIResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/models.APIResponse'
+      summary: 查询志愿-院校优先
+      tags:
+      - voluntary
+  /health:
+    get:
+      consumes:
+      - '*/*'
+      description: get the status of server.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Show the status of server.
+      tags:
+      - root
+swagger: "2.0"
