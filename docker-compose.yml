@@ -1,0 +1,25 @@
+services:
+  mariadb:
+    image: swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/mariadb:lts-linuxarm64
+    container_name: mariadb-gaokao
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-gaokao}
+      MYSQL_USER: ${MYSQL_USER:-user}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-passwd}
+    ports:
+      - "${MYSQL_PORT:-13306}:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+  
+  promtail:
+    image: swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/grafana/promtail:3.4.2-linuxarm64
+    container_name: promtail
+    volumes:
+      - ./promtail-config.yaml:/etc/promtail/config.yaml:ro
+      - ./logs:/var/log/myapp
+      - ./positions:/tmp
+    command: -config.file=/etc/promtail/config.yaml
+
+volumes:
+  mysql-data:

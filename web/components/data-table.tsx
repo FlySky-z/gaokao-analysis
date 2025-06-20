@@ -181,7 +181,7 @@ export function DataTable({ rankData }: DataTableProps) {
         rank: rank.toString(),
       })
 
-      const response = await fetch(`/api/report/get?${params}`)
+      const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/report/get?${params}`)
 
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`)
