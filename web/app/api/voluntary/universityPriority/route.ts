@@ -7,6 +7,8 @@ interface ApiRequest {
   enrollment_plan?: string;
   max_score?: string;
   min_score?: string;
+  page?: number;
+  page_size?: number;
   profile_id?: string;
   province?: string;
   rank?: number;
@@ -28,6 +30,8 @@ function transformQueryData(queryData: unknown): ApiRequest {
     minScore?: number;
     maxScore?: number;
     enrollmentPlan?: string;
+    page?: number;
+    pageSize?: number;
   };
   
   return {
@@ -41,6 +45,8 @@ function transformQueryData(queryData: unknown): ApiRequest {
     min_score: data.minScore?.toString(),
     max_score: data.maxScore?.toString(),
     enrollment_plan: data.enrollmentPlan,
+    page: data.page || 1,
+    page_size: data.pageSize || 20,
   };
 }
 

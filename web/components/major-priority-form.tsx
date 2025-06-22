@@ -13,6 +13,7 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Separator } from "@/components/ui/separator"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import {
   Collapsible,
   CollapsibleContent,
@@ -20,7 +21,6 @@ import {
 } from "@/components/ui/collapsible"
 import { IconChevronDown, IconChevronUp, IconSearch, IconFilter } from "@tabler/icons-react"
 import { scoreRankConverter } from "@/lib/score-rank-converter"
-import { ScoreRankDisplay } from "@/components/score-rank-display"
 
 // 专业优先查询表单数据类型
 export interface MajorPriorityFormData {
@@ -33,7 +33,7 @@ export interface MajorPriorityFormData {
 
   // 可选筛选条件
   interest?: string; // 意向专业方向，格式：["理科","工科"]
-  strategy?: number; // 冲稳保策略 0 冲 1 稳 2 保，默认1稳
+  strategy?: number; // 冲稳保策略 0 冲 1 稳 2 保，默认0冲
   page?: string; // 页码
   page_size?: string; // 每页大小
 }
@@ -57,6 +57,41 @@ const optionalSubjects = [
   { value: '地理', label: '地理' },
 ];
 
+// 院校所在地选项
+const collegeLocationOptions = [
+  { value: '福建', label: '福建' },
+  { value: '云南', label: '云南' },
+  { value: '宁夏', label: '宁夏' },
+  { value: '河南', label: '河南' },
+  { value: '吉林', label: '吉林' },
+  { value: '山东', label: '山东' },
+  { value: '湖南', label: '湖南' },
+  { value: '广东', label: '广东' },
+  { value: '浙江', label: '浙江' },
+  { value: '内蒙古', label: '内蒙古' },
+  { value: '湖北', label: '湖北' },
+  { value: '广西', label: '广西' },
+  { value: '青海', label: '青海' },
+  { value: '山西', label: '山西' },
+  { value: '陕西', label: '陕西' },
+  { value: '四川', label: '四川' },
+  { value: '黑龙江', label: '黑龙江' },
+  { value: '江西', label: '江西' },
+  { value: '天津', label: '天津' },
+  { value: '辽宁', label: '辽宁' },
+  { value: '西藏', label: '西藏' },
+  { value: '安徽', label: '安徽' },
+  { value: '上海', label: '上海' },
+  { value: '贵州', label: '贵州' },
+  { value: '重庆', label: '重庆' },
+  { value: '北京', label: '北京' },
+  { value: '河北', label: '河北' },
+  { value: '海南', label: '海南' },
+  { value: '新疆', label: '新疆' },
+  { value: '江苏', label: '江苏' },
+  { value: '甘肃', label: '甘肃' },
+];
+
 // 专业兴趣方向
 const interestOptions = [
   { value: '理科', label: '理科' },
@@ -70,9 +105,9 @@ const interestOptions = [
 
 // 策略选项
 const strategyOptions = [
-  { value: 0, label: '冲一冲', color: 'bg-red-100 text-red-800 border-red-200' },
-  { value: 1, label: '稳一稳', color: 'bg-blue-100 text-blue-800 border-blue-200' },
-  { value: 2, label: '保一保', color: 'bg-green-100 text-green-800 border-green-200' },
+  { value: 0, label: '冲', fullLabel: '冲一冲', color: 'bg-red-100 text-red-800 border-red-200' },
+  { value: 1, label: '稳', fullLabel: '稳一稳', color: 'bg-blue-100 text-blue-800 border-blue-200' },
+  { value: 2, label: '保', fullLabel: '保一保', color: 'bg-green-100 text-green-800 border-green-200' },
 ];
 
 export function MajorPriorityForm({ onSubmit, loading = false }: MajorPriorityFormProps) {
@@ -81,14 +116,15 @@ export function MajorPriorityForm({ onSubmit, loading = false }: MajorPriorityFo
     class_optional_choise: '',
     province: '湖北', // 目前仅限湖北
     rank: 0,
-    college_location: '湖北',
-    strategy: 1, // 默认稳一稳
+    college_location: JSON.stringify([]), // 默认不选择具体地区
+    strategy: 0, // 默认冲一冲
     page: '1',
     page_size: '20',
   });
 
   const [selectedOptionalSubjects, setSelectedOptionalSubjects] = React.useState<string[]>([]);
   const [selectedInterests, setSelectedInterests] = React.useState<string[]>([]);
+  const [selectedCollegeLocations, setSelectedCollegeLocations] = React.useState<string[]>([]);
   const [advancedOpen, setAdvancedOpen] = React.useState(false);
   const [scoreInput, setScoreInput] = React.useState('');
   const [rankInput, setRankInput] = React.useState('');
@@ -291,10 +327,21 @@ export function MajorPriorityForm({ onSubmit, loading = false }: MajorPriorityFo
     }));
   };
 
-  // 表单提交
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
+  // 处理院校所在地选择
+  const handleCollegeLocationToggle = (location: string) => {
+    const newLocations = selectedCollegeLocations.includes(location)
+      ? selectedCollegeLocations.filter(l => l !== location)
+      : [...selectedCollegeLocations, location];
 
+    setSelectedCollegeLocations(newLocations);
+    setFormData(prev => ({
+      ...prev,
+      college_location: JSON.stringify(newLocations)
+    }));
+  };
+
+  // 按钮提交
+  const handleButtonSubmit = () => {
     // 验证必填项
     if (!formData.class_first_choise) {
       alert('请选择首选科目');
@@ -323,7 +370,7 @@ export function MajorPriorityForm({ onSubmit, loading = false }: MajorPriorityFo
     <div className="space-y-6">
       {/* 基础信息卡片 */}
       <Card>
-        <form onSubmit={handleSubmit} className="space-y-6">
+        <div className="space-y-6">
           <CardHeader>
             <CardTitle className="text-lg">基础信息</CardTitle>
           </CardHeader>
@@ -331,7 +378,9 @@ export function MajorPriorityForm({ onSubmit, loading = false }: MajorPriorityFo
             {/* 第一行：首选科目和生源地 */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label className="text-base font-medium">生源地</Label>
+                <Label htmlFor="province" className="text-base font-medium">
+                  生源地
+                </Label>
                 <Select value={formData.province} onValueChange={(value) => setFormData(prev => ({ ...prev, province: value }))}>
                   <SelectTrigger>
                     <SelectValue />
@@ -354,11 +403,8 @@ export function MajorPriorityForm({ onSubmit, loading = false }: MajorPriorityFo
                     <SelectValue placeholder="请选择首选科目" />
                   </SelectTrigger>
                   <SelectContent>
-                    {firstChoiceSubjects.map(subject => (
-                      <SelectItem key={subject.value} value={subject.value}>
-                        {subject.label}
-                      </SelectItem>
-                    ))}
+                    <SelectItem value="物理">物理</SelectItem>
+                    <SelectItem value="历史">历史</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -444,12 +490,16 @@ export function MajorPriorityForm({ onSubmit, loading = false }: MajorPriorityFo
                 <CollapsibleTrigger asChild>
                   <CardHeader>
                     <div className="flex items-center justify-between">
-                      <CardTitle className="text-lg flex items-center gap-2">
+                      <div className="flex items-center space-x-2">
                         <IconFilter size={20} />
-                        高级筛选
-                      </CardTitle>
-                      <div className="transition-transform duration-200" style={{ transform: advancedOpen ? 'rotate(180deg)' : 'rotate(0deg)' }}>
-                        <IconChevronDown size={20} />
+                        <CardTitle>高级筛选</CardTitle>
+                        <Badge variant="secondary">可选</Badge>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <span className="text-sm text-muted-foreground">
+                          {advancedOpen ? '收起筛选' : '展开筛选'}
+                        </span>
+                        {advancedOpen ? <IconChevronUp size={20} /> : <IconChevronDown size={20} />}
                       </div>
                     </div>
                   </CardHeader>
@@ -476,26 +526,25 @@ export function MajorPriorityForm({ onSubmit, loading = false }: MajorPriorityFo
                       </div>
                     </div>
 
-                    <Separator />
-
-                    {/* 策略选择 */}
+                    {/* 院校所在地 */}
                     <div className="space-y-3">
-                      <Label className="text-base font-medium">志愿策略</Label>
-                      <div className="grid grid-cols-3 gap-3">
-                        {strategyOptions.map((strategy) => (
-                          <div
-                            key={strategy.value}
-                            className={`p-3 rounded-lg border-2 cursor-pointer transition-all ${formData.strategy === strategy.value
-                              ? 'border-blue-500 bg-blue-50'
-                              : 'border-border hover:border-blue-300'
-                              }`}
-                            onClick={() => setFormData(prev => ({ ...prev, strategy: strategy.value }))}
-                          >
-                            <div className="text-center">
-                              <Badge className={strategy.color}>
-                                {strategy.label}
-                              </Badge>
-                            </div>
+                      <div className="flex items-center gap-2">
+                        <Label className="text-base font-medium">院校所在地</Label>
+                        <Badge variant="outline" className="text-xs">
+                          已选 {selectedCollegeLocations.length} 个地区
+                        </Badge>
+                      </div>
+                      <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-6 gap-3">
+                        {collegeLocationOptions.map((location) => (
+                          <div key={location.value} className="flex items-center space-x-2">
+                            <Checkbox
+                              id={`location-${location.value}`}
+                              checked={selectedCollegeLocations.includes(location.value)}
+                              onCheckedChange={() => handleCollegeLocationToggle(location.value)}
+                            />
+                            <Label htmlFor={`location-${location.value}`} className="text-sm cursor-pointer">
+                              {location.label}
+                            </Label>
                           </div>
                         ))}
                       </div>
@@ -508,7 +557,7 @@ export function MajorPriorityForm({ onSubmit, loading = false }: MajorPriorityFo
             {/* 提交按钮 */}
             <div className="flex gap-3">
               <Button
-                type="submit"
+                onClick={handleButtonSubmit}
                 disabled={loading}
                 className="flex-1"
                 size="lg"
@@ -527,8 +576,56 @@ export function MajorPriorityForm({ onSubmit, loading = false }: MajorPriorityFo
               </Button>
             </div>
           </CardContent>
+        </div>
+      </Card>
 
-        </form>
+      {/* 策略选择 */}
+      <Card>
+        <CardContent>
+          <div className="space-y-3">
+            <Label className="text-base font-medium">志愿策略</Label>
+            <Tabs
+              value={formData.strategy?.toString() || '0'}
+              onValueChange={(value) => {
+                const newStrategy = parseInt(value);
+                setFormData(prev => ({ ...prev, strategy: newStrategy }));
+
+                // 如果表单已填写完整，切换策略时自动重新查询
+                if (isFormValid) {
+                  const updatedFormData = { ...formData, strategy: newStrategy };
+                  onSubmit(updatedFormData);
+                }
+              }}
+              className="w-full"
+            >
+              <TabsList className="grid grid-cols-3">
+                {strategyOptions.map((strategy) => (
+                  <TabsTrigger
+                    key={strategy.value}
+                    value={strategy.value.toString()}
+                    className="flex items-center gap-2"
+                  >
+                    <span>{strategy.label}</span>
+                  </TabsTrigger>
+                ))}
+              </TabsList>
+              {strategyOptions.map((strategy) => (
+                <TabsContent key={strategy.value} value={strategy.value.toString()} className="mt-4">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Badge className={strategy.color}>
+                      {strategy.fullLabel}
+                    </Badge>
+                    <span className="text-sm text-muted-foreground">
+                      {strategy.value === 0 && '选择录取分数线较高的专业，有一定风险但可能获得更好的专业。'}
+                      {strategy.value === 1 && '选择录取分数线适中的专业，比较稳妥的选择。'}
+                      {strategy.value === 2 && '选择录取分数线较低的专业，确保能够被录取。'}
+                    </span>
+                  </div>
+                </TabsContent>
+              ))}
+            </Tabs>
+          </div>
+        </CardContent>
       </Card>
     </div>
   );

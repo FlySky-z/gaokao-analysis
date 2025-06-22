@@ -34,12 +34,17 @@ interface DashboardClientProps {
 }
 
 // API调用函数 - 院校优先
-async function queryColleges(queryData: QueryFormData): Promise<QueryResult> {
+async function queryColleges(queryData: QueryFormData, page: number = 1): Promise<QueryResult> {
   try {
+    const requestData = {
+      ...queryData,
+      page: page
+    };
+    
     const response = await fetch('/api/voluntary/universityPriority', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(queryData)
+      body: JSON.stringify(requestData)
     });
 
     if (!response.ok) {
@@ -70,7 +75,7 @@ async function queryColleges(queryData: QueryFormData): Promise<QueryResult> {
 }
 
 // API调用函数 - 专业优先
-async function queryMajors(queryData: MajorPriorityFormData): Promise<MajorPriorityResult> {
+async function queryMajors(queryData: MajorPriorityFormData, page: number = 1): Promise<MajorPriorityResult> {
   try {
     // 构建查询参数
     const searchParams = new URLSearchParams();
@@ -79,10 +84,10 @@ async function queryMajors(queryData: MajorPriorityFormData): Promise<MajorPrior
     searchParams.append('province', queryData.province);
     searchParams.append('rank', queryData.rank.toString());
     searchParams.append('college_location', queryData.college_location);
+    searchParams.append('page', page.toString());
     
     if (queryData.interest) searchParams.append('interest', queryData.interest);
     if (queryData.strategy !== undefined) searchParams.append('strategy', queryData.strategy.toString());
-    if (queryData.page) searchParams.append('page', queryData.page);
     if (queryData.page_size) searchParams.append('page_size', queryData.page_size);
 
     const response = await fetch(`/api/report/get?${searchParams.toString()}`, {
@@ -170,6 +175,10 @@ export default function DashboardClient({ user }: DashboardClientProps) {
   const [majorResults, setMajorResults] = React.useState<MajorPriorityResult | null>(null);
   const [loading, setLoading] = React.useState(false);
   const [majorLoading, setMajorLoading] = React.useState(false);
+  
+  // 分页和查询参数状态
+  const [currentQueryData, setCurrentQueryData] = React.useState<QueryFormData | null>(null);
+  const [currentMajorQueryData, setCurrentMajorQueryData] = React.useState<MajorPriorityFormData | null>(null);
 
   const handleRankSelect = (score: number, rank: number, province: string, subjectType: string) => {
     setRankData({ score, rank, province, subjectType });
@@ -178,7 +187,8 @@ export default function DashboardClient({ user }: DashboardClientProps) {
   const handleQuery = async (queryData: QueryFormData) => {
     try {
       setLoading(true);
-      const results = await queryColleges(queryData);
+      setCurrentQueryData(queryData); // 保存查询参数
+      const results = await queryColleges(queryData, 1); // 重置到第一页
       setQueryResults(results);
     } catch (error) {
       console.error('查询失败:', error);
@@ -191,11 +201,43 @@ export default function DashboardClient({ user }: DashboardClientProps) {
   const handleMajorQuery = async (queryData: MajorPriorityFormData) => {
     try {
       setMajorLoading(true);
-      const results = await queryMajors(queryData);
+      setCurrentMajorQueryData(queryData); // 保存查询参数
+      
+      const results = await queryMajors(queryData, 1); // 重置到第一页
       setMajorResults(results);
     } catch (error) {
       console.error('专业查询失败:', error);
       // 这里可以添加错误提示
+    } finally {
+      setMajorLoading(false);
+    }
+  };
+
+  // 处理院校优先分页
+  const handlePageChange = async (page: number) => {
+    if (!currentQueryData) return;
+    
+    try {
+      setLoading(true);
+      const results = await queryColleges(currentQueryData, page);
+      setQueryResults(results);
+    } catch (error) {
+      console.error('分页查询失败:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // 处理专业优先分页
+  const handleMajorPageChange = async (page: number) => {
+    if (!currentMajorQueryData) return;
+    
+    try {
+      setMajorLoading(true);
+      const results = await queryMajors(currentMajorQueryData, page);
+      setMajorResults(results);
+    } catch (error) {
+      console.error('专业分页查询失败:', error);
     } finally {
       setMajorLoading(false);
     }
@@ -250,15 +292,23 @@ export default function DashboardClient({ user }: DashboardClientProps) {
                     
                     <TabsContent value="university" className="space-y-6">
                       <QueryForm onSubmit={handleQuery} loading={loading} />
-                      <UniversityResults results={queryResults} loading={loading} />
+                      <UniversityResults 
+                        results={queryResults} 
+                        loading={loading} 
+                        onPageChange={handlePageChange}
+                      />
                     </TabsContent>
                     
                     <TabsContent value="major" className="space-y-6">
-                      <MajorPriorityForm onSubmit={handleMajorQuery} loading={majorLoading} />
+                      <MajorPriorityForm 
+                        onSubmit={handleMajorQuery} 
+                        loading={majorLoading}
+                      />
                       <MajorPriorityResults 
                         results={majorResults} 
                         loading={majorLoading}
                         onViewMajorGroup={queryMajorGroup}
+                        onPageChange={handleMajorPageChange}
                       />
                     </TabsContent>
                   </Tabs>

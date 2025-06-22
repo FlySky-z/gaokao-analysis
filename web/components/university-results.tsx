@@ -15,7 +15,7 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible"
-import { IconChevronDown, IconChevronUp } from "@tabler/icons-react"
+import { IconChevronDown, IconChevronUp, IconChevronLeft, IconChevronRight, IconChevronsLeft, IconChevronsRight } from "@tabler/icons-react"
 
 // API返回的数据类型定义
 export interface Major {
@@ -62,6 +62,7 @@ export interface QueryResult {
 interface UniversityResultsProps {
   results: QueryResult | null;
   loading?: boolean;
+  onPageChange?: (page: number) => void;
 }
 
 const strategyLabels = {
@@ -92,6 +93,71 @@ function calculateGroupStats(majors: Major[]) {
   const group_min_rank = Math.max(...validMajors.map(major => major.min_rank));
 
   return { group_min_score, group_min_rank };
+}
+
+// 分页组件
+function Pagination({ 
+  currentPage, 
+  totalPages, 
+  onPageChange,
+  loading = false
+}: { 
+  currentPage: number; 
+  totalPages: number; 
+  onPageChange: (page: number) => void;
+  loading?: boolean;
+}) {
+  const canGoPrevious = currentPage > 1 && !loading;
+  const canGoNext = currentPage < totalPages && !loading;
+
+  return (
+    <div className="flex items-center justify-center space-x-2">
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={() => onPageChange(1)}
+        disabled={!canGoPrevious}
+      >
+        <IconChevronsLeft size={16} />
+      </Button>
+      
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={() => onPageChange(currentPage - 1)}
+        disabled={!canGoPrevious}
+      >
+        <IconChevronLeft size={16} />
+      </Button>
+      
+      <div className="flex items-center space-x-2 px-4">
+        <span className="text-sm font-medium">
+          第 {currentPage} / {totalPages} 页
+        </span>
+        {loading && (
+          <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600 ml-2"></div>
+        )}
+      </div>
+      
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={() => onPageChange(currentPage + 1)}
+        disabled={!canGoNext}
+      >
+        <IconChevronRight size={16} />
+      </Button>
+      
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={() => onPageChange(totalPages)}
+        disabled={!canGoNext}
+      >
+        <IconChevronsRight size={16} />
+      </Button>
+    </div>
+  );
 }
 
 function ProbabilityBar({ probability }: { probability: number }) {
@@ -298,7 +364,7 @@ function UniversityCard({ university }: { university: University }) {
   );
 }
 
-export function UniversityResults({ results, loading = false }: UniversityResultsProps) {
+export function UniversityResults({ results, loading = false, onPageChange }: UniversityResultsProps) {
   if (loading) {
     return (
       <Card>
@@ -346,13 +412,16 @@ export function UniversityResults({ results, loading = false }: UniversityResult
         ))}
       </div>
       
-      {/* 分页信息 */}
-      {results.page_num > 1 && (
+      {/* 分页控制 */}
+      {results.page_num > 1 && onPageChange && (
         <Card>
-          <CardContent className="flex items-center justify-center py-4">
-            <div className="text-sm text-muted-foreground">
-              第 {results.page || 1} / {results.page_num} 页，每页 {results.page_size || 0} 条
-            </div>
+          <CardContent className="py-4">
+            <Pagination
+              currentPage={results.page || 1}
+              totalPages={results.page_num}
+              onPageChange={onPageChange}
+              loading={loading}
+            />
           </CardContent>
         </Card>
       )}

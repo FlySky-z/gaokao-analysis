@@ -12,6 +12,7 @@ import {
 import { Checkbox } from "@/components/ui/checkbox"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Separator } from "@/components/ui/separator"
 import {
   Collapsible,
@@ -20,7 +21,6 @@ import {
 } from "@/components/ui/collapsible"
 import { IconChevronDown, IconChevronUp, IconSearch, IconFilter } from "@tabler/icons-react"
 import { scoreRankConverter } from "@/lib/score-rank-converter"
-import { ScoreRankDisplay } from "@/components/score-rank-display"
 
 export interface QueryFormData {
   // 基础信息
@@ -56,10 +56,25 @@ const hubeiCities = [
   '湖北武汉市'
 ];
 
-const strategies = [
-  { value: 0, label: '冲一冲', description: '录取概率较低，但冲击名校', icon: '🚀', color: 'border-red-200 bg-red-50 text-red-700 hover:bg-red-100' },
-  { value: 1, label: '稳一稳', description: '录取概率适中，稳妥选择', icon: '🎯', color: 'border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100' },
-  { value: 2, label: '保一保', description: '录取概率较高，保底选择', icon: '🛡️', color: 'border-green-200 bg-green-50 text-green-700 hover:bg-green-100' },
+const strategyOptions = [
+  { 
+    value: 0, 
+    label: '冲', 
+    fullLabel: '冲一冲',
+    color: 'bg-red-100 text-red-800 border-red-200'
+  },
+  { 
+    value: 1, 
+    label: '稳', 
+    fullLabel: '稳一稳',
+    color: 'bg-blue-100 text-blue-800 border-blue-200'
+  },
+  { 
+    value: 2, 
+    label: '保', 
+    fullLabel: '保一保',
+    color: 'bg-green-100 text-green-800 border-green-200'
+  },
 ];
 
 const collegeTypeCategories = {
@@ -373,7 +388,10 @@ export function QueryForm({ onSubmit, loading = false }: QueryFormProps) {
               <Label htmlFor="province" className="text-base font-medium">
                 生源地
               </Label>
-              <Select value={formData.province} onValueChange={(value) => setFormData(prev => ({ ...prev, province: value }))}>
+              <Select
+                value={formData.province}
+                onValueChange={(value) => setFormData(prev => ({ ...prev, province: value }))}
+              >
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
@@ -458,7 +476,6 @@ export function QueryForm({ onSubmit, loading = false }: QueryFormProps) {
                 onChange={(e) => handleScoreChange(e.target.value)}
                 max={750}
                 min={0}
-                className={formData.score === 0 ? 'border-red-200' : ''}
                 disabled={isConverting}
               />
               {isConverting && inputMode === 'score' && (
@@ -482,17 +499,6 @@ export function QueryForm({ onSubmit, loading = false }: QueryFormProps) {
                 min={1}
                 disabled={isConverting}
               />
-              {isConverting && inputMode === 'rank' && (
-                <div className="flex items-center space-x-2 text-xs text-muted-foreground">
-                  <div className="w-3 h-3 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
-                  <span>正在计算分数...</span>
-                </div>
-              )}
-              {formData.rank && (
-                <p className="text-xs text-muted-foreground">
-                  位次: 第 {formData.rank.toLocaleString()} 名
-                </p>
-              )}
             </div>
           </div>
 
@@ -517,36 +523,8 @@ export function QueryForm({ onSubmit, loading = false }: QueryFormProps) {
                 </CardHeader>
               </CollapsibleTrigger>
 
-              <CollapsibleContent>
+              <CollapsibleContent className="data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:slide-out-to-top-1 data-[state=open]:slide-in-from-top-1">
                 <CardContent className="space-y-6">
-
-                  {/* 填报策略 */}
-                  <div className="space-y-4">
-                    <Label className="text-base font-medium">填报策略</Label>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                      {strategies.map((strategy) => (
-                        <div
-                          key={strategy.value}
-                          className={`p-4 border-2 rounded-lg cursor-pointer transition-all ${formData.strategy === strategy.value
-                            ? strategy.color + ' border-current'
-                            : 'border-gray-200 hover:border-gray-300'
-                            }`}
-                          onClick={() => setFormData(prev => ({ ...prev, strategy: strategy.value }))}
-                        >
-                          <div className="flex items-center space-x-3">
-                            <span className="text-2xl">{strategy.icon}</span>
-                            <div>
-                              <div className="font-semibold">{strategy.label}</div>
-                              <div className="text-sm text-muted-foreground">{strategy.description}</div>
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-
-                  <Separator />
-
                   {/* 院校类型 */}
                   <div className="space-y-4">
                     <Label className="text-base font-medium">院校类型</Label>
@@ -637,17 +615,66 @@ export function QueryForm({ onSubmit, loading = false }: QueryFormProps) {
             </Collapsible>
           </Card>
 
-          {/* 快速查询按钮 */}
+          {/* 查询按钮 */}
           <div className="flex gap-3">
             <Button
-              onClick={handleQuickQuery}
+              onClick={handleSubmit}
               disabled={loading || !isFormValid}
               className="flex-1"
               size="lg"
             >
               <IconSearch size={16} className="mr-2" />
-              {loading ? '查询中...' : '快速查询（推荐院校）'}
+              {loading ? '查询中...' : '查询推荐院校'}
             </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* 策略选择 */}
+      <Card>
+        <CardContent>
+          <div className="space-y-3">
+            <Label className="text-base font-medium">志愿策略</Label>
+            <Tabs
+              value={formData.strategy?.toString() || '0'}
+              onValueChange={(value) => {
+                const newStrategy = parseInt(value);
+                setFormData(prev => ({ ...prev, strategy: newStrategy }));
+
+                // 如果表单已填写完整，切换策略时自动重新查询
+                if (isFormValid) {
+                  const updatedFormData = { ...formData, strategy: newStrategy };
+                  onSubmit(updatedFormData);
+                }
+              }}
+              className="w-full"
+            >
+              <TabsList className="grid grid-cols-3">
+                {strategyOptions.map((strategy) => (
+                  <TabsTrigger
+                    key={strategy.value}
+                    value={strategy.value.toString()}
+                    className="flex items-center gap-2"
+                  >
+                    <span>{strategy.label}</span>
+                  </TabsTrigger>
+                ))}
+              </TabsList>
+              {strategyOptions.map((strategy) => (
+                <TabsContent key={strategy.value} value={strategy.value.toString()} className="mt-4">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Badge className={strategy.color}>
+                      {strategy.fullLabel}
+                    </Badge>
+                    <span className="text-sm text-muted-foreground">
+                      {strategy.value === 0 && '选择录取分数线较高的专业，有一定风险但可能获得更好的专业。'}
+                      {strategy.value === 1 && '选择录取分数线适中的专业，比较稳妥的选择。'}
+                      {strategy.value === 2 && '选择录取分数线较低的专业，确保能够被录取。'}
+                    </span>
+                  </div>
+                </TabsContent>
+              ))}
+            </Tabs>
           </div>
         </CardContent>
       </Card>

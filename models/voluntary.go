@@ -135,6 +135,8 @@ type VoluntaryMajor struct {
 	PlanNum string `json:"plan_num"`
 	// 录取概率，百分比
 	Probability int32 `json:"probability"`
+	// 专业备注
+	Remark string `json:"remark"`
 	// 策略
 	Strategy int32 `json:"strategy"`
 	// 学费
@@ -172,6 +174,51 @@ func SubjectsToBitmap(subjectsStr string) int {
 	}
 
 	return bitmap
+}
+
+// ValidateSubjects 验证科目组合，必须包含物理或历史
+func ValidateSubjects(subjectsStr string) error {
+	if subjectsStr == "" {
+		return fmt.Errorf("科目不能为空，必须包含物理或历史")
+	}
+
+	subjects := strings.Split(subjectsStr, ",")
+	hasPhysics := false
+	hasHistory := false
+
+	for _, subject := range subjects {
+		subject = strings.TrimSpace(subject)
+		if subject == "物理" {
+			hasPhysics = true
+		} else if subject == "历史" {
+			hasHistory = true
+		}
+	}
+
+	if !hasPhysics && !hasHistory {
+		return fmt.Errorf("科目组合必须包含物理或历史")
+	}
+
+	return nil
+}
+
+// GetSubjectType 获取科目类型（物理或历史）
+func GetSubjectType(subjectsStr string) string {
+	if subjectsStr == "" {
+		return ""
+	}
+
+	subjects := strings.Split(subjectsStr, ",")
+	for _, subject := range subjects {
+		subject = strings.TrimSpace(subject)
+		if subject == "物理" {
+			return "物理"
+		} else if subject == "历史" {
+			return "历史"
+		}
+	}
+
+	return ""
 }
 
 // 计算录取概率
@@ -260,6 +307,11 @@ func GetUniversityPriorityVoluntary(ctx context.Context, req *VoluntaryUniversit
 		}
 	}
 
+	// 验证科目组合（必须包含物理或历史）
+	if err := ValidateSubjects(req.Subjects); err != nil {
+		return nil, fmt.Errorf("科目验证失败: %w", err)
+	}
+
 	// 处理省份
 	if req.Province != "" {
 		conditions = append(conditions, "source_location = ?")
@@ -292,8 +344,15 @@ func GetUniversityPriorityVoluntary(ctx context.Context, req *VoluntaryUniversit
 		args = append(args, req.Score+maxScoreDiff)
 	}
 
-	// 处理科目限制
+	// 处理科目类型过滤（物理或历史）
 	if req.Subjects != "" {
+		subjectType := GetSubjectType(req.Subjects)
+		if subjectType != "" {
+			conditions = append(conditions, "plan_subject_type = ?")
+			args = append(args, subjectType)
+		}
+
+		// 处理其他科目限制
 		subjectBitmap := SubjectsToBitmap(req.Subjects)
 		if subjectBitmap > 0 {
 			// 检查科目位图是否匹配
@@ -539,7 +598,8 @@ func GetMajorGroupDetails(ctx context.Context, req *VoluntaryMajorGroupRequest) 
 			admission_2024_major_group_min_rank as min_rank,
 			admission_2024_plan_count as plan_num,
 			plan_tuition_fee as study_cost,
-			plan_duration as study_year
+			plan_duration as study_year,
+			plan_major_remark as remark
 		FROM gaokao_data
 		WHERE plan_school_code = ? AND plan_major_group_code = ?
 	`
@@ -573,14 +633,28 @@ func GetMajorGroupDetails(ctx context.Context, req *VoluntaryMajorGroupRequest) 
 		}
 	}
 
+	// 验证科目组合（必须包含物理或历史）
+	if req.Subjects != "" {
+		if err := ValidateSubjects(req.Subjects); err != nil {
+			return nil, fmt.Errorf("科目验证失败: %w", err)
+		}
+	}
+
 	// 添加省份条件
 	if req.Province != "" {
 		majorQueryConditions = append(majorQueryConditions, "source_location = ?")
 		majorQueryArgs = append(majorQueryArgs, req.Province)
 	}
 
-	// 添加科目限制
+	// 处理科目类型过滤（物理或历史）
 	if req.Subjects != "" {
+		subjectType := GetSubjectType(req.Subjects)
+		if subjectType != "" {
+			majorQueryConditions = append(majorQueryConditions, "plan_subject_type = ?")
+			majorQueryArgs = append(majorQueryArgs, subjectType)
+		}
+
+		// 添加其他科目限制
 		subjectBitmap := SubjectsToBitmap(req.Subjects)
 		if subjectBitmap > 0 {
 			majorQueryConditions = append(majorQueryConditions, "(plan_subject_restriction_bit = 0 OR bitAnd(plan_subject_restriction_bit, ?) = plan_subject_restriction_bit)")
@@ -621,8 +695,9 @@ func GetMajorGroupDetails(ctx context.Context, req *VoluntaryMajorGroupRequest) 
 		var planNum sql.NullInt32
 		var studyCost sql.NullInt32
 		var studyYear sql.NullString
+		var remark sql.NullString
 
-		if err := majorRows.Scan(&id, &code, &name, &minScore, &minRank, &planNum, &studyCost, &studyYear); err != nil {
+		if err := majorRows.Scan(&id, &code, &name, &minScore, &minRank, &planNum, &studyCost, &studyYear, &remark); err != nil {
 			slog.Error("扫描专业信息失败", "error", err.Error())
 			continue
 		}
@@ -664,7 +739,13 @@ func GetMajorGroupDetails(ctx context.Context, req *VoluntaryMajorGroupRequest) 
 				return "0"
 			}(),
 			Probability: probability,
-			Strategy:    strategy,
+			Remark: func() string {
+				if remark.Valid {
+					return remark.String
+				}
+				return ""
+			}(),
+			Strategy: strategy,
 			StudyCost: func() string {
 				if studyCost.Valid {
 					return fmt.Sprintf("%d", studyCost.Int32)

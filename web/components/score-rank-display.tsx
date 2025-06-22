@@ -161,7 +161,7 @@ export function ScoreRankDisplay({
         
         <div className="mt-4 p-3 bg-blue-50 rounded-lg border border-blue-200">
           <p className="text-xs text-blue-800 text-center">
-            💡 数据基于真实高考一分一段表，点击"选择"可快速填入表单
+            💡 数据基于真实高考一分一段表，点击&ldquo;选择&rdquo;可快速填入表单
           </p>
         </div>
       </CardContent>

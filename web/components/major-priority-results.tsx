@@ -3,6 +3,14 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog"
+import {
   Table,
   TableBody,
   TableCell,
@@ -18,19 +26,43 @@ import {
   SheetTitle,
   SheetTrigger,
 } from "@/components/ui/sheet"
-import { IconEye, IconSchool, IconBook } from "@tabler/icons-react"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
+import { IconEye, IconSchool, IconBook, IconChevronLeft, IconChevronRight, IconChevronsLeft, IconChevronsRight } from "@tabler/icons-react"
 
-// API返回的专业数据类型（根据TODO文档）
+// 辅助函数：格式化专业组代码为两位数字符串
+function formatGroupCode(code: string): string {
+  if (!code) return code;
+  const num = parseInt(code);
+  if (isNaN(num)) return code;
+  return num.toString().padStart(2, '0');
+}
+
+// API返回的专业数据类型（根据最新API文档）
 export interface MajorItem {
-  class_demand?: string; // 选科要求
-  colledge_code?: string; // 院校代码
-  colledge_name?: string; // 院校名称
-  description?: string; // 备注
-  id?: number; // 自增id
-  lowest_points?: number; // 录取最低分
-  lowest_rank?: number; // 录取最低位次
+  class_demand: string; // 选科要求
+  college_authority: string; // 院校主管部门
+  college_city: string; // 院校城市
+  college_code: string; // 院校代码
+  college_level: string; // 院校层次
+  college_name: string; // 院校名称
+  college_ownership: string; // 院校性质
+  college_province: string; // 院校省份
+  college_tags: string; // 院校标签
+  college_type: string; // 院校类型
+  education_level: string; // 教育层次
+  id: number; // 自增id，对应表格里的id
+  is_new_major: boolean; // 是否为新专业
+  lowest_points: number; // 录取最低分
+  lowest_rank: number; // 录取最低位次
+  major_description: string; // 专业描述
   professional_name: string; // 专业名称
-  special_interest_group_code?: string; // 专业组代码
+  special_interest_group_code: string; // 专业组代码
+  tuition_fee: number; // 学费
 }
 
 export interface MajorPriorityResult {
@@ -58,6 +90,7 @@ export interface MajorGroupDetail {
     name?: string; // 专业名称
     plan_num?: string; // 计划数
     probability?: number; // 录取概率
+    remark?: string; // 专业备注
     strategy?: number; // 策略
     study_cost?: string; // 学费
     study_year?: string; // 学制
@@ -78,6 +111,7 @@ interface MajorPriorityResultsProps {
     score: number;
     subjects: string;
   }) => Promise<MajorGroupDetail>;
+  onPageChange?: (page: number) => void;
 }
 
 const strategyLabels = {
@@ -85,6 +119,113 @@ const strategyLabels = {
   1: { label: '稳一稳', color: 'bg-blue-100 text-blue-800 border-blue-200' },
   2: { label: '保一保', color: 'bg-green-100 text-green-800 border-green-200' },
 };
+
+// 分页组件
+function Pagination({ 
+  currentPage, 
+  totalPages, 
+  onPageChange,
+  loading = false
+}: { 
+  currentPage: number; 
+  totalPages: number; 
+  onPageChange: (page: number) => void;
+  loading?: boolean;
+}) {
+  const canGoPrevious = currentPage > 1 && !loading;
+  const canGoNext = currentPage < totalPages && !loading;
+
+  return (
+    <div className="flex items-center justify-center space-x-2">
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={() => onPageChange(1)}
+        disabled={!canGoPrevious}
+      >
+        <IconChevronsLeft size={16} />
+      </Button>
+      
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={() => onPageChange(currentPage - 1)}
+        disabled={!canGoPrevious}
+      >
+        <IconChevronLeft size={16} />
+      </Button>
+      
+      <div className="flex items-center space-x-2 px-4">
+        <span className="text-sm font-medium">
+          第 {currentPage} / {totalPages} 页
+        </span>
+        {loading && (
+          <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600 ml-2"></div>
+        )}
+      </div>
+      
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={() => onPageChange(currentPage + 1)}
+        disabled={!canGoNext}
+      >
+        <IconChevronRight size={16} />
+      </Button>
+      
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={() => onPageChange(totalPages)}
+        disabled={!canGoNext}
+      >
+        <IconChevronsRight size={16} />
+      </Button>
+    </div>
+  );
+}
+
+// 专业描述单元格组件
+function MajorDescriptionCell({ description, majorName }: { description: string; majorName: string }) {
+  const [open, setOpen] = React.useState(false);
+  
+  // 截断长文本，显示前50个字符
+  const truncatedText = description && description.length > 50 
+    ? `${description.substring(0, 50)}...` 
+    : description;
+
+  if (!description || description === '—') {
+    return <span className="text-muted-foreground">—</span>;
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <button 
+          className="text-left text-sm hover:text-primary hover:underline transition-colors cursor-pointer"
+          onClick={() => setOpen(true)}
+        >
+          {truncatedText}
+        </button>
+      </DialogTrigger>
+      <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle className="text-lg font-semibold">
+            {majorName} - 专业描述
+          </DialogTitle>
+          <DialogDescription className="text-sm text-muted-foreground">
+            详细的专业介绍和课程内容
+          </DialogDescription>
+        </DialogHeader>
+        <div className="mt-4 space-y-4">
+          <div className="text-sm leading-relaxed whitespace-pre-wrap">
+            {description}
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
 
 function MajorRow({ 
   major, 
@@ -97,9 +238,22 @@ function MajorRow({
     <TableRow className="hover:bg-muted/50">
       <TableCell className="font-medium">
         <div className="space-y-1">
-          <div className="font-medium">{major.professional_name}</div>
+          <div className="flex items-center gap-2">
+            <span className="font-medium">{major.professional_name}</span>
+            {major.is_new_major && (
+              <Badge variant="secondary" className="text-xs bg-orange-100 text-orange-800">
+                新专业
+              </Badge>
+            )}
+          </div>
           <div className="text-sm text-muted-foreground">
-            {major.colledge_name}
+            {major.college_name}
+          </div>
+          <div className="text-xs text-muted-foreground">
+            {major.college_city && major.college_province && 
+              `${major.college_province} · ${major.college_city}`
+            }
+            {major.college_type && ` · ${major.college_type}`}
           </div>
         </div>
       </TableCell>
@@ -109,13 +263,16 @@ function MajorRow({
           <div className="text-muted-foreground">
             最低位次：{major.lowest_rank ? major.lowest_rank.toLocaleString() : '—'}
           </div>
+          <div className="text-muted-foreground">
+            学费：{major.tuition_fee ? `${major.tuition_fee}元/年` : '—'}
+          </div>
         </div>
       </TableCell>
       <TableCell>
         <div className="text-sm">
-          <div>院校代码：{major.colledge_code || '—'}</div>
+          <div>院校代码：{major.college_code || '—'}</div>
           <div className="text-muted-foreground">
-            专业组：{major.special_interest_group_code || '—'}
+            专业组：{major.special_interest_group_code ? formatGroupCode(major.special_interest_group_code) : '—'}
           </div>
         </div>
       </TableCell>
@@ -123,7 +280,10 @@ function MajorRow({
         {major.class_demand || '—'}
       </TableCell>
       <TableCell className="text-sm">
-        {major.description || '—'}
+        <MajorDescriptionCell 
+          description={major.major_description || '—'} 
+          majorName={major.professional_name || '未知专业'}
+        />
       </TableCell>
       <TableCell>
         {major.special_interest_group_code && (
@@ -146,11 +306,13 @@ function MajorGroupSheet({
   open, 
   onOpenChange, 
   groupDetail, 
+  selectedMajor,
   loading: sheetLoading 
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   groupDetail: MajorGroupDetail | null;
+  selectedMajor: MajorItem | null;
   loading: boolean;
 }) {
   return (
@@ -173,6 +335,83 @@ function MajorGroupSheet({
             </div>
           ) : groupDetail ? (
             <>
+              {/* 院校信息 */}
+              {selectedMajor && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-lg flex items-center gap-2">
+                      <IconSchool size={20} />
+                      院校信息
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-4">
+                      {/* 基本信息 */}
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <div className="text-sm text-muted-foreground">院校名称</div>
+                          <div className="font-semibold">{selectedMajor.college_name}</div>
+                        </div>
+                        <div>
+                          <div className="text-sm text-muted-foreground">院校代码</div>
+                          <div>{selectedMajor.college_code}</div>
+                        </div>
+                      </div>
+                      
+                      {/* 地理位置 */}
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <div className="text-sm text-muted-foreground">所在省份</div>
+                          <div>{selectedMajor.college_province}</div>
+                        </div>
+                        <div>
+                          <div className="text-sm text-muted-foreground">所在城市</div>
+                          <div>{selectedMajor.college_city}</div>
+                        </div>
+                      </div>
+                      
+                      {/* 院校属性 */}
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <div className="text-sm text-muted-foreground">院校类型</div>
+                          <div>{selectedMajor.college_type}</div>
+                        </div>
+                        <div>
+                          <div className="text-sm text-muted-foreground">院校层次</div>
+                          <div>{selectedMajor.college_level}</div>
+                        </div>
+                      </div>
+                      
+                      {/* 办学性质和主管部门 */}
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <div className="text-sm text-muted-foreground">办学性质</div>
+                          <div>{selectedMajor.college_ownership}</div>
+                        </div>
+                        <div>
+                          <div className="text-sm text-muted-foreground">主管部门</div>
+                          <div>{selectedMajor.college_authority}</div>
+                        </div>
+                      </div>
+                      
+                      {/* 院校标签 */}
+                      {selectedMajor.college_tags && (
+                        <div>
+                          <div className="text-sm text-muted-foreground mb-2">院校标签</div>
+                          <div className="flex flex-wrap gap-2">
+                            {selectedMajor.college_tags.split(',').map((tag, index) => (
+                              <Badge key={index} variant="outline" className="text-xs">
+                                {tag.trim()}
+                              </Badge>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+
               {/* 专业组统计信息 */}
               <Card>
                 <CardHeader>
@@ -200,13 +439,15 @@ function MajorGroupSheet({
                   <CardTitle className="text-lg">专业详情</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <Table>
+                  <TooltipProvider>
+                    <Table>
                     <TableHeader>
                       <TableRow>
                         <TableHead>专业名称</TableHead>
                         <TableHead>录取分数</TableHead>
                         <TableHead>招生信息</TableHead>
                         <TableHead>费用</TableHead>
+                        <TableHead>备注</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -232,10 +473,33 @@ function MajorGroupSheet({
                           <TableCell className="text-sm">
                             {major.study_cost || '—'}
                           </TableCell>
+                          <TableCell className="text-sm max-w-xs">
+                            {major.remark && major.remark !== '—' ? (
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <div className="truncate cursor-pointer text-blue-600 hover:text-blue-800">
+                                    {major.remark}
+                                  </div>
+                                </TooltipTrigger>
+                                <TooltipContent 
+                                  className="max-w-sm p-3 text-sm leading-relaxed !bg-white !border !border-gray-200 shadow-lg z-50"
+                                  side="top"
+                                  sideOffset={5}
+                                >
+                                  <p className="text-gray-800 whitespace-pre-wrap !text-left">
+                                    {major.remark}
+                                  </p>
+                                </TooltipContent>
+                              </Tooltip>
+                            ) : (
+                              <span className="text-gray-400">—</span>
+                            )}
+                          </TableCell>
                         </TableRow>
                       ))}
                     </TableBody>
                   </Table>
+                  </TooltipProvider>
                 </CardContent>
               </Card>
             </>
@@ -253,14 +517,25 @@ function MajorGroupSheet({
 export function MajorPriorityResults({ 
   results, 
   loading = false, 
-  onViewMajorGroup 
+  onViewMajorGroup,
+  onPageChange
 }: MajorPriorityResultsProps) {
   const [sheetOpen, setSheetOpen] = React.useState(false);
   const [sheetLoading, setSheetLoading] = React.useState(false);
   const [selectedMajorGroup, setSelectedMajorGroup] = React.useState<MajorGroupDetail | null>(null);
+  const [selectedMajor, setSelectedMajor] = React.useState<MajorItem | null>(null);
+
+  const handleSheetOpenChange = (open: boolean) => {
+    setSheetOpen(open);
+    if (!open) {
+      // 关闭Sheet时清除选中的专业
+      setSelectedMajor(null);
+      setSelectedMajorGroup(null);
+    }
+  };
 
   const handleViewGroup = async (major: MajorItem) => {
-    if (!major.special_interest_group_code || !major.colledge_code) {
+    if (!major.special_interest_group_code || !major.college_code) {
       alert('专业组信息不完整，无法查看详情');
       return;
     }
@@ -269,11 +544,12 @@ export function MajorPriorityResults({
       setSheetLoading(true);
       setSheetOpen(true);
       setSelectedMajorGroup(null);
+      setSelectedMajor(major); // 设置选中的专业
 
       // 调用API获取专业组详情
       const groupDetail = await onViewMajorGroup({
-        group_code: major.special_interest_group_code,
-        school_code: major.colledge_code,
+        group_code: formatGroupCode(major.special_interest_group_code),
+        school_code: major.college_code,
         province: '湖北',
         rank: major.lowest_rank || 0,
         score: major.lowest_points || 0,
@@ -338,10 +614,10 @@ export function MajorPriorityResults({
               <TableHeader>
                 <TableRow>
                   <TableHead>专业 & 院校</TableHead>
-                  <TableHead>录取分数</TableHead>
+                  <TableHead>录取信息 & 学费</TableHead>
                   <TableHead>代码信息</TableHead>
                   <TableHead>选科要求</TableHead>
-                  <TableHead>备注</TableHead>
+                  <TableHead>专业描述</TableHead>
                   <TableHead>操作</TableHead>
                 </TableRow>
               </TableHeader>
@@ -358,13 +634,16 @@ export function MajorPriorityResults({
           </CardContent>
         </Card>
         
-        {/* 分页信息 */}
-        {results.data.conf && results.data.conf.total_page > 1 && (
+        {/* 分页控制 */}
+        {results.data.conf && results.data.conf.total_page > 1 && onPageChange && (
           <Card>
-            <CardContent className="flex items-center justify-center py-4">
-              <div className="text-sm text-muted-foreground">
-                第 {results.data.conf.page} / {results.data.conf.total_page} 页，每页 {results.data.conf.page_size} 条
-              </div>
+            <CardContent className="py-4">
+              <Pagination
+                currentPage={results.data.conf.page}
+                totalPages={results.data.conf.total_page}
+                onPageChange={onPageChange}
+                loading={loading}
+              />
             </CardContent>
           </Card>
         )}
@@ -373,8 +652,9 @@ export function MajorPriorityResults({
       {/* 专业组详情Sheet */}
       <MajorGroupSheet
         open={sheetOpen}
-        onOpenChange={setSheetOpen}
+        onOpenChange={handleSheetOpenChange}
         groupDetail={selectedMajorGroup}
+        selectedMajor={selectedMajor}
         loading={sheetLoading}
       />
     </>
