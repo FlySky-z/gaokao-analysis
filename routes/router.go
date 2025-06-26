@@ -1,15 +1,20 @@
 package routes
 
 import (
-	"gaokao-data-analysis/handlers"
 	"os"
+
+	"gaokao-data-analysis/handlers"
 
 	"github.com/gin-gonic/gin"
 )
 
 // SetupRouter sets up the gin router and all routes
 func SetupRouter() *gin.Engine {
-	gin.SetMode(os.Getenv("GIN_MODE"))
+	mode := os.Getenv("GIN_MODE")
+	if mode == "" {
+		mode = gin.ReleaseMode // or gin.DebugMode if you prefer
+	}
+	gin.SetMode(mode)
 
 	r := gin.Default()
 
