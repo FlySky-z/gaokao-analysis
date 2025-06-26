@@ -378,9 +378,11 @@ func GetUniversityPriorityVoluntary(ctx context.Context, req *VoluntaryUniversit
 	if req.CollegeType != "" {
 		collegeTypes := strings.Split(req.CollegeType, ",")
 		if len(collegeTypes) > 0 {
-			// 分类处理不同类型的筛选条件
+			// 分类处理不同类型的筛选条件，并保持条件与参数的顺序一致
 			var publicPrivateConditions []string
+			var publicPrivateArgs []interface{}
 			var tagsConditions []string
+			var tagsArgs []interface{}
 			// TODO: 考虑增加院校的水平查询
 			// var levelConditions []string
 
@@ -390,21 +392,23 @@ func GetUniversityPriorityVoluntary(ctx context.Context, req *VoluntaryUniversit
 				switch {
 				case colType == "公办" || colType == "民办":
 					publicPrivateConditions = append(publicPrivateConditions, "school_info_public_private = ?")
-					args = append(args, colType)
+					publicPrivateArgs = append(publicPrivateArgs, colType)
 				default:
 					// 假设其他为院校类型
 					tagsConditions = append(tagsConditions, "has(school_info_tags_list, ?)")
-					args = append(args, colType)
+					tagsArgs = append(tagsArgs, colType)
 				}
 			}
 
-			// 合并各类条件
+			// 合并各类条件，并按顺序添加参数
 			var typeConditions []string
 			if len(publicPrivateConditions) > 0 {
 				typeConditions = append(typeConditions, "("+strings.Join(publicPrivateConditions, " OR ")+")")
+				args = append(args, publicPrivateArgs...)
 			}
 			if len(tagsConditions) > 0 {
 				typeConditions = append(typeConditions, "("+strings.Join(tagsConditions, " OR ")+")")
+				args = append(args, tagsArgs...)
 			}
 
 			if len(typeConditions) > 0 {

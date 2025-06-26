@@ -4,8 +4,14 @@
 *.dll
 *.so
 *.dylib
+gaokaoZ
+
+# Build directories
 build/
 .otel-build/
+.arms_build_tool/
+arms_cache/
+arms_log/
 
 # Test binary, build output
 *.test

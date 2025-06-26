@@ -32,7 +32,7 @@ func main() {
 	// 记录应用程序启动信息
 	slog.Info("应用程序初始化完成",
 		"version", "1.0.0",
-		"environment", os.Getenv("APP_ENV"),
+		"environment", os.Getenv("GIN_MODE"),
 	)
 
 	// Auto migrate database models
