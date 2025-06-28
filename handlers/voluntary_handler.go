@@ -2,9 +2,11 @@ package handlers
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"gaokao-data-analysis/models"
@@ -12,6 +14,89 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/gin-gonic/gin/binding"
 )
+
+// convertProvinceNameToPinyin 将省份中文名转换为拼音
+func convertProvinceNameToPinyin(provinceName string) string {
+	// 省份中文名到拼音的映射
+	provinceMap := map[string]string{
+		"湖北":  "hubei",
+		"湖南":  "hunan",
+		"河北":  "hebei",
+		"河南":  "henan",
+		"山东":  "shandong",
+		"山西":  "shanxi",
+		"陕西":  "shaanxi",
+		"四川":  "sichuan",
+		"江苏":  "jiangsu",
+		"江西":  "jiangxi",
+		"浙江":  "zhejiang",
+		"安徽":  "anhui",
+		"福建":  "fujian",
+		"广东":  "guangdong",
+		"广西":  "guangxi",
+		"海南":  "hainan",
+		"贵州":  "guizhou",
+		"云南":  "yunnan",
+		"西藏":  "xizang",
+		"青海":  "qinghai",
+		"甘肃":  "gansu",
+		"宁夏":  "ningxia",
+		"新疆":  "xinjiang",
+		"内蒙古": "neimenggu",
+		"辽宁":  "liaoning",
+		"吉林":  "jilin",
+		"黑龙江": "heilongjiang",
+		"北京":  "beijing",
+		"天津":  "tianjin",
+		"上海":  "shanghai",
+		"重庆":  "chongqing",
+	}
+
+	// 查找对应的拼音
+	if pinyin, exists := provinceMap[provinceName]; exists {
+		return pinyin
+	}
+
+	// 如果没找到，返回原字符串的小写形式
+	return strings.ToLower(provinceName)
+}
+
+// convertRankToScore 将位次转换为分数的辅助函数
+// province: 报考省份（例如：湖北 或 hubei）
+// subjects: 科目组合，用逗号分隔（例如：物理,化学 或 历史,地理）
+// rank: 位次
+// 返回：分数和错误信息
+func convertRankToScore(province, subjects string, rank int) (int, error) {
+	// 转换省份名称为拼音
+	provincePinyin := convertProvinceNameToPinyin(province)
+
+	// 解析科目组合，确定是物理类还是历史类
+	var category string
+	if strings.Contains(subjects, "物理") {
+		category = "physics"
+	} else if strings.Contains(subjects, "历史") {
+		category = "history"
+	} else {
+		return 0, fmt.Errorf("无法确定科目类别，subjects: %s", subjects)
+	}
+
+	// 使用2024年数据
+	year := 2024
+
+	// 调用核心查询函数
+	slog.Info("转换位次到分数",
+		"province", provincePinyin,
+		"category", category,
+		"year", year,
+		"rank", rank,
+	)
+	score, err := QueryScoreByRank(provincePinyin, category, year, rank)
+	if err != nil {
+		return 0, fmt.Errorf("查询分数失败: %v", err)
+	}
+
+	return score, nil
+}
 
 // UniversityPriorityVoluntary godoc
 // @Summary 查询志愿-院校优先
@@ -55,11 +140,6 @@ func UniversityPriorityVoluntary(c *gin.Context) {
 
 	// 处理特殊的表单字段转换，表单可能会将整数作为字符串提交
 	handleFormFieldConversions(c, &request)
-
-	slog.Debug("接收到志愿-院校优先查询请求",
-		"data", request,
-		"clientIP", c.ClientIP(),
-	)
 
 	// 校验参数：必须有 profile_id，或者 (province, subjects, rank) 都有
 	if request.ProfileID == "" &&
@@ -125,12 +205,13 @@ func handleFormFieldConversions(c *gin.Context, request *models.VoluntaryUnivers
 		}
 	}
 
-	// 处理 Score 字段
-	if scoreStr := c.PostForm("score"); scoreStr != "" && request.Score == 0 {
-		if score, err := strconv.Atoi(scoreStr); err == nil {
-			request.Score = int32(score)
-		}
+	score, err := convertRankToScore(request.Province, request.Subjects, int(request.Rank))
+	if err != nil {
+		slog.Warn("转换位次到分数失败[志愿-院校优先]",
+			"error", err.Error(),
+		)
 	}
+	request.Score = int32(score)
 
 	// 处理 Strategy 字段
 	if strategyStr := c.PostForm("strategy"); strategyStr != "" && request.Strategy == 0 {

@@ -19,8 +19,47 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible"
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover"
 import { IconChevronDown, IconChevronUp, IconSearch, IconFilter } from "@tabler/icons-react"
 import { scoreRankConverter } from "@/lib/score-rank-converter"
+
+// API 接口定义
+export interface ProvincesResponse {
+  /**
+   * 响应码
+   */
+  code: number;
+  data: ProvincesData;
+  /**
+   * 响应消息
+   */
+  msg: string;
+  [property: string]: any;
+}
+
+export interface ProvincesData {
+  /**
+   * 可选省份列表
+   */
+  provinces: Province[];
+  [property: string]: any;
+}
+
+export interface Province {
+  /**
+   * 对应的城市
+   */
+  citys: string[];
+  /**
+   * 省份名称
+   */
+  province: string;
+  [property: string]: any;
+}
 
 export interface QueryFormData {
   // 基础信息
@@ -50,10 +89,6 @@ const subjects = [
   { value: '生物', label: '生物', type: 'optional' },
   { value: '政治', label: '政治', type: 'optional' },
   { value: '地理', label: '地理', type: 'optional' },
-];
-
-const hubeiCities = [
-  '湖北武汉市'
 ];
 
 const strategyOptions = [
@@ -116,12 +151,14 @@ export function QueryForm({ onSubmit, loading = false }: QueryFormProps) {
   const [isConverting, setIsConverting] = React.useState(false);
   const [inputMode, setInputMode] = React.useState<'score' | 'rank'>('score');
 
+  // 省份城市数据状态
+  const [provincesData, setProvincesData] = React.useState<Province[]>([]);
+  const [loadingProvinces, setLoadingProvinces] = React.useState(false);
+  const [selectedProvinces, setSelectedProvinces] = React.useState<string[]>([]);
+
   // 防抖定时器
   const scoreDebounceRef = React.useRef<NodeJS.Timeout | null>(null);
   const rankDebounceRef = React.useRef<NodeJS.Timeout | null>(null);
-
-  // 避免循环更新的标记
-  const isUpdatingFromConversion = React.useRef(false);
 
   // 获取当前科目类型（确保与首选科目强相关）
   const getCurrentSubject = React.useCallback(() => {
@@ -171,6 +208,110 @@ export function QueryForm({ onSubmit, loading = false }: QueryFormProps) {
       return Math.max(200, 750 - Math.floor(rank / 100));
     }
   }, [getCurrentSubject]);
+
+  // 获取省份城市数据
+  const fetchProvincesData = React.useCallback(async () => {
+    if (provincesData.length > 0) return;
+    
+    setLoadingProvinces(true);
+    try {
+      const response = await fetch('/api/options/provinces');
+      if (!response.ok) throw new Error('网络请求失败');
+      
+      const data = await response.json();
+      
+      // 解析数据：code 为 0 表示成功
+      if (data.code === 0 && data.data?.provinces) {
+        setProvincesData(data.data.provinces);
+      }
+    } catch (error) {
+      console.error('获取省份数据失败:', error);
+    } finally {
+      setLoadingProvinces(false);
+    }
+  }, [provincesData.length]);
+
+  // 组件挂载时获取省份数据
+  React.useEffect(() => {
+    fetchProvincesData();
+  }, [fetchProvincesData]);
+
+  // 处理省份选择
+  const handleProvinceToggle = (provinceName: string) => {
+    const province = provincesData.find(p => p.province === provinceName);
+    if (!province) return;
+
+    const cities = province.citys || []; // 处理空数组情况
+    const isSelected = selectedProvinces.includes(provinceName);
+    
+    if (isSelected) {
+      // 取消选择省份
+      setSelectedProvinces(prev => prev.filter(p => p !== provinceName));
+      if (cities.length > 0) {
+        // 移除该省份下的所有城市（拼接格式）
+        const provinceCities = cities.map(city => `${provinceName}${city}`);
+        setFormData(prev => ({
+          ...prev,
+          citys: prev.citys.filter(city => !provinceCities.includes(city))
+        }));
+      }
+    } else {
+      // 选择省份
+      setSelectedProvinces(prev => [...prev, provinceName]);
+      if (cities.length > 0) {
+        // 添加该省份下的所有城市（拼接格式）
+        const provinceCities = cities.map(city => `${provinceName}${city}`);
+        setFormData(prev => ({
+          ...prev,
+          citys: [...new Set([...prev.citys, ...provinceCities])]
+        }));
+      }
+    }
+  };
+
+  // 处理城市选择
+  const handleCityToggle = (cityName: string, provinceName: string) => {
+    const fullCityName = `${provinceName}${cityName}`;
+    
+    setFormData(prev => ({
+      ...prev,
+      citys: prev.citys.includes(fullCityName)
+        ? prev.citys.filter(c => c !== fullCityName)
+        : [...prev.citys, fullCityName]
+    }));
+    
+    // 更新省份选择状态
+    const province = provincesData.find(p => p.province === provinceName);
+    if (province) {
+      const cities = province.citys || [];
+      
+      // 计算当前操作后该省份会有多少城市被选中
+      const currentSelectedCities = formData.citys.filter(city => 
+        city.startsWith(provinceName) && city !== fullCityName
+      );
+      
+      const willBeSelected = !formData.citys.includes(fullCityName);
+      const futureSelectedCount = willBeSelected 
+        ? currentSelectedCities.length + 1 
+        : currentSelectedCities.length;
+      
+      // 如果该省份的所有城市都将被选中，则标记省份为选中状态
+      if (futureSelectedCount === cities.length && !selectedProvinces.includes(provinceName)) {
+        setSelectedProvinces(prev => [...prev, provinceName]);
+      } 
+      // 如果该省份不再有城市被选中，则取消省份选中状态
+      else if (futureSelectedCount === 0 && selectedProvinces.includes(provinceName)) {
+        setSelectedProvinces(prev => prev.filter(p => p !== provinceName));
+      }
+      // 如果部分城市被选中，则取消省份的全选状态
+      else if (futureSelectedCount > 0 && futureSelectedCount < cities.length && selectedProvinces.includes(provinceName)) {
+        setSelectedProvinces(prev => prev.filter(p => p !== provinceName));
+      }
+    }
+  };
+
+  // 避免循环更新的标记
+  const isUpdatingFromConversion = React.useRef(false);
 
   // 处理分数输入变化
   const handleScoreChange = React.useCallback((value: string) => {
@@ -330,15 +471,6 @@ export function QueryForm({ onSubmit, loading = false }: QueryFormProps) {
       collegeTypes: prev.collegeTypes.includes(type)
         ? prev.collegeTypes.filter(t => t !== type)
         : [...prev.collegeTypes, type]
-    }));
-  };
-
-  const handleCityToggle = (city: string) => {
-    setFormData(prev => ({
-      ...prev,
-      citys: prev.citys.includes(city)
-        ? prev.citys.filter(c => c !== city)
-        : [...prev.citys, city]
     }));
   };
 
@@ -561,20 +693,108 @@ export function QueryForm({ onSubmit, loading = false }: QueryFormProps) {
                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                     {/* 目标城市 */}
                     <div className="space-y-3">
-                      <Label className="text-base font-medium">目标城市</Label>
-                      <div className="grid grid-cols-2 gap-2 max-h-48 overflow-y-auto">
-                        {hubeiCities.map((city) => (
-                          <div key={city} className="flex items-center space-x-2">
-                            <Checkbox
-                              id={`city-${city}`}
-                              checked={formData.citys.includes(city)}
-                              onCheckedChange={() => handleCityToggle(city)}
-                            />
-                            <Label htmlFor={`city-${city}`} className="text-sm cursor-pointer">
-                              {city}
-                            </Label>
+                      <div className="flex items-center gap-2">
+                        <Label className="text-base font-medium">目标城市</Label>
+                        {loadingProvinces && (
+                          <div className="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+                        )}
+                        {formData.citys.length > 0 && (
+                          <Badge variant="outline" className="border-green-500 text-green-700">
+                            已选 {formData.citys.length} 个城市
+                          </Badge>
+                        )}
+                      </div>
+                      
+                      {/* 省份选择网格 */}
+                      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+                        {provincesData.length === 0 && !loadingProvinces ? (
+                          <div className="col-span-full text-center text-muted-foreground py-4">
+                            暂无省份数据
                           </div>
-                        ))}
+                        ) : (
+                          provincesData.map((province) => {
+                            const cities = province.citys || [];
+                            const isProvinceSelected = selectedProvinces.includes(province.province);
+                            const selectedCitiesInProvince = cities.filter((city: string) => 
+                              formData.citys.includes(`${province.province}${city}`)
+                            ).length;
+                            
+                            return (
+                              <div key={province.province} className="flex items-center space-x-2 p-2 border rounded-lg hover:bg-muted/50 min-h-[3rem]">
+                                {/* 省份复选框 - 选择全部城市 */}
+                                <Checkbox
+                                  checked={isProvinceSelected}
+                                  onCheckedChange={() => handleProvinceToggle(province.province)}
+                                />
+                                
+                                {/* 省份名称 - 点击弹出城市选择 */}
+                                <Popover>
+                                  <PopoverTrigger asChild>
+                                    <button className="flex-1 text-left text-sm font-medium hover:text-blue-600 cursor-pointer min-h-[2rem] flex items-center">
+                                      <div className="flex items-center flex-wrap gap-1">
+                                        <span>{province.province}</span>
+                                        {selectedCitiesInProvince > 0 && (
+                                          <Badge variant="secondary" className="text-xs">
+                                            {selectedCitiesInProvince}/{cities.length}
+                                          </Badge>
+                                        )}
+                                      </div>
+                                    </button>
+                                  </PopoverTrigger>
+                                  <PopoverContent className="w-80 p-4" align="start">
+                                    <div className="space-y-3">
+                                      <div className="flex items-center justify-between">
+                                        <h4 className="font-medium">{province.province}的城市</h4>
+                                        <Badge variant="outline" className="text-xs">
+                                          {selectedCitiesInProvince}/{cities.length}
+                                        </Badge>
+                                      </div>
+                                      
+                                      {cities.length > 0 ? (
+                                        <div className="grid grid-cols-2 gap-2 max-h-48 overflow-y-auto">
+                                          {cities.map((city: string) => {
+                                            const fullCityName = `${province.province}${city}`;
+                                            return (
+                                              <div key={`${province.province}-${city}`} className="flex items-center space-x-2">
+                                                <Checkbox
+                                                  id={`popover-city-${province.province}-${city}`}
+                                                  checked={formData.citys.includes(fullCityName)}
+                                                  onCheckedChange={() => handleCityToggle(city, province.province)}
+                                                />
+                                                <Label 
+                                                  htmlFor={`popover-city-${province.province}-${city}`} 
+                                                  className="text-sm cursor-pointer flex-1"
+                                                >
+                                                  {city}
+                                                </Label>
+                                              </div>
+                                            );
+                                          })}
+                                        </div>
+                                      ) : (
+                                        <div className="text-center text-muted-foreground text-sm py-4">
+                                          暂无城市数据
+                                        </div>
+                                      )}
+                                      
+                                      {/* 快捷操作 */}
+                                      <div className="flex gap-2 pt-2 border-t">
+                                        <Button
+                                          variant="outline"
+                                          size="sm"
+                                          onClick={() => handleProvinceToggle(province.province)}
+                                          disabled={cities.length === 0}
+                                        >
+                                          {isProvinceSelected ? '取消全选' : '全选'}
+                                        </Button>
+                                      </div>
+                                    </div>
+                                  </PopoverContent>
+                                </Popover>
+                              </div>
+                            );
+                          })
+                        )}
                       </div>
                     </div>
 

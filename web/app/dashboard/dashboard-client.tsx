@@ -4,8 +4,8 @@ import * as React from "react"
 import { AppSidebar } from "@/components/app-sidebar"
 import { ChartAreaInteractive } from "@/components/chart-area-interactive"
 import { SiteHeader } from "@/components/site-header"
-import { QueryForm, QueryFormData } from "@/components/query-form"
-import { UniversityResults, QueryResult } from "@/components/university-results"
+import { QueryForm, QueryFormData } from "@/components/college-priority-form"
+import { UniversityResults, QueryResult } from "@/components/college-priority-results"
 import { MajorPriorityForm, MajorPriorityFormData } from "@/components/major-priority-form"
 import { MajorPriorityResults, MajorPriorityResult, MajorGroupDetail } from "@/components/major-priority-results"
 import { UserRankDisplay } from "@/components/user-rank-display"
@@ -309,6 +309,12 @@ export default function DashboardClient({ user }: DashboardClientProps) {
                         loading={majorLoading}
                         onViewMajorGroup={queryMajorGroup}
                         onPageChange={handleMajorPageChange}
+                        currentQueryData={currentMajorQueryData ? {
+                          class_first_choise: currentMajorQueryData.class_first_choise,
+                          class_optional_choise: currentMajorQueryData.class_optional_choise,
+                          province: currentMajorQueryData.province,
+                          rank: currentMajorQueryData.rank
+                        } : null}
                       />
                     </TabsContent>
                   </Tabs>

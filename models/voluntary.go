@@ -337,10 +337,10 @@ func GetUniversityPriorityVoluntary(ctx context.Context, req *VoluntaryUniversit
 			maxScoreDiff = -5  // 分数比最低分低5分
 		}
 
-		conditions = append(conditions, "admission_2024_major_group_min_score >= ?")
+		conditions = append(conditions, "admission_2024_min_score >= ?")
 		args = append(args, req.Score+minScoreDiff)
 
-		conditions = append(conditions, "admission_2024_major_group_min_score <= ?")
+		conditions = append(conditions, "admission_2024_min_score <= ?")
 		args = append(args, req.Score+maxScoreDiff)
 	}
 
@@ -598,8 +598,8 @@ func GetMajorGroupDetails(ctx context.Context, req *VoluntaryMajorGroupRequest) 
 			id,
 			plan_major_code as code,
 			plan_major_name as name,
-			admission_2024_major_group_min_score as min_score,
-			admission_2024_major_group_min_rank as min_rank,
+			admission_2024_min_score as min_score,
+			admission_2024_min_rank as min_rank,
 			admission_2024_plan_count as plan_num,
 			plan_tuition_fee as study_cost,
 			plan_duration as study_year,

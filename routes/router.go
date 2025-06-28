@@ -34,6 +34,19 @@ func SetupRouter() *gin.Engine {
 			voluntary.POST("/universityPriority", handlers.UniversityPriorityVoluntary)
 			voluntary.POST("/majorGroup", handlers.GetMajorGroupDetailsHandler)
 		}
+
+		// Options Routes
+		options := api.Group("/options")
+		{
+			options.GET("/provinces", handlers.GetProvinceOptions)
+		}
+
+		// Score Rank Routes
+		scoreRank := api.Group("/rank")
+		{
+			scoreRank.GET("/getRank", handlers.GetScoreRank)
+			scoreRank.GET("/getScore", handlers.GetRankToScore)
+		}
 	}
 
 	return r

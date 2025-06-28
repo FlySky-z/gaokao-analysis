@@ -57,11 +57,14 @@ export interface MajorItem {
   education_level: string; // 教育层次
   id: number; // 自增id，对应表格里的id
   is_new_major: boolean; // 是否为新专业
-  lowest_points: number; // 录取最低分
-  lowest_rank: number; // 录取最低位次
+  lowest_points: number; // 专业组录取最低分
+  lowest_rank: number; // 专业组录取最低位次
   major_description: string; // 专业描述
+  major_min_rank_2024: number; // 24年专业录取最低位次
+  major_min_score_2024: number; // 24年专业录取最低分
   professional_name: string; // 专业名称
   special_interest_group_code: string; // 专业组代码
+  study_years: string; // 学制
   tuition_fee: number; // 学费
 }
 
@@ -112,6 +115,12 @@ interface MajorPriorityResultsProps {
     subjects: string;
   }) => Promise<MajorGroupDetail>;
   onPageChange?: (page: number) => void;
+  currentQueryData?: {
+    class_first_choise: string;
+    class_optional_choise: string;
+    province: string;
+    rank: number;
+  } | null; // 添加当前查询参数
 }
 
 const strategyLabels = {
@@ -255,16 +264,24 @@ function MajorRow({
             }
             {major.college_type && ` · ${major.college_type}`}
           </div>
+          <div className="text-xs text-muted-foreground">
+            学制：{major.study_years || '—'} · 学费：{major.tuition_fee ? `${major.tuition_fee}元/年` : '—'}
+          </div>
         </div>
       </TableCell>
       <TableCell>
         <div className="text-sm">
-          <div>最低分：{major.lowest_points || '—'}</div>
+          <div>专业组最低分：{major.lowest_points || '—'}</div>
           <div className="text-muted-foreground">
-            最低位次：{major.lowest_rank ? major.lowest_rank.toLocaleString() : '—'}
+            专业组最低位次：{major.lowest_rank ? major.lowest_rank.toLocaleString() : '—'}
           </div>
+        </div>
+      </TableCell>
+      <TableCell>
+        <div className="text-sm">
+          <div>专业最低分：{major.major_min_score_2024 || '—'}</div>
           <div className="text-muted-foreground">
-            学费：{major.tuition_fee ? `${major.tuition_fee}元/年` : '—'}
+            专业最低位次：{major.major_min_rank_2024 ? major.major_min_rank_2024.toLocaleString() : '—'}
           </div>
         </div>
       </TableCell>
@@ -307,13 +324,20 @@ function MajorGroupSheet({
   onOpenChange, 
   groupDetail, 
   selectedMajor,
-  loading: sheetLoading 
+  loading: sheetLoading,
+  currentQueryData
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   groupDetail: MajorGroupDetail | null;
   selectedMajor: MajorItem | null;
   loading: boolean;
+  currentQueryData?: {
+    class_first_choise: string;
+    class_optional_choise: string;
+    province: string;
+    rank: number;
+  } | null;
 }) {
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -518,12 +542,34 @@ export function MajorPriorityResults({
   results, 
   loading = false, 
   onViewMajorGroup,
-  onPageChange
+  onPageChange,
+  currentQueryData
 }: MajorPriorityResultsProps) {
   const [sheetOpen, setSheetOpen] = React.useState(false);
   const [sheetLoading, setSheetLoading] = React.useState(false);
   const [selectedMajorGroup, setSelectedMajorGroup] = React.useState<MajorGroupDetail | null>(null);
   const [selectedMajor, setSelectedMajor] = React.useState<MajorItem | null>(null);
+
+  // 构建科目字符串的辅助函数
+  const buildSubjectsString = React.useCallback(() => {
+    if (!currentQueryData) {
+      return '物理,化学,生物'; // 默认值
+    }
+
+    const firstChoice = currentQueryData.class_first_choise;
+    let optionalChoices: string[] = [];
+    
+    try {
+      optionalChoices = JSON.parse(currentQueryData.class_optional_choise || '[]');
+    } catch (error) {
+      console.warn('解析可选科目失败:', error);
+      optionalChoices = [];
+    }
+
+    // 构建完整的科目列表：首选科目 + 可选科目
+    const allSubjects = [firstChoice, ...optionalChoices].filter(Boolean);
+    return allSubjects.join(',');
+  }, [currentQueryData]);
 
   const handleSheetOpenChange = (open: boolean) => {
     setSheetOpen(open);
@@ -550,10 +596,10 @@ export function MajorPriorityResults({
       const groupDetail = await onViewMajorGroup({
         group_code: formatGroupCode(major.special_interest_group_code),
         school_code: major.college_code,
-        province: '湖北',
-        rank: major.lowest_rank || 0,
-        score: major.lowest_points || 0,
-        subjects: '物理,化学,生物', // 这里需要根据实际用户选择的科目传入
+        province: currentQueryData?.province || '湖北', // 使用用户选择的省份
+        rank: currentQueryData?.rank || major.lowest_rank || 0, // 使用用户输入的位次
+        score: major.lowest_points || 0, // 使用专业组最低分
+        subjects: buildSubjectsString(), // 使用用户选择的科目组合
       });
 
       setSelectedMajorGroup(groupDetail);
@@ -614,7 +660,8 @@ export function MajorPriorityResults({
               <TableHeader>
                 <TableRow>
                   <TableHead>专业 & 院校</TableHead>
-                  <TableHead>录取信息 & 学费</TableHead>
+                  <TableHead>专业组录取信息</TableHead>
+                  <TableHead>专业录取信息(2024)</TableHead>
                   <TableHead>代码信息</TableHead>
                   <TableHead>选科要求</TableHead>
                   <TableHead>专业描述</TableHead>
@@ -656,6 +703,7 @@ export function MajorPriorityResults({
         groupDetail={selectedMajorGroup}
         selectedMajor={selectedMajor}
         loading={sheetLoading}
+        currentQueryData={currentQueryData}
       />
     </>
   );
