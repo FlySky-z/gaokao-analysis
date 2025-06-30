@@ -89,6 +89,7 @@ async function queryMajors(queryData: MajorPriorityFormData, page: number = 1): 
     if (queryData.interest) searchParams.append('interest', queryData.interest);
     if (queryData.strategy !== undefined) searchParams.append('strategy', queryData.strategy.toString());
     if (queryData.page_size) searchParams.append('page_size', queryData.page_size);
+    if (queryData.fuzzy_subject_category) searchParams.append('fuzzy_subject_category', queryData.fuzzy_subject_category);
 
     const response = await fetch(`/api/report/get?${searchParams.toString()}`, {
       method: 'GET',

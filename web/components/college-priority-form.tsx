@@ -38,7 +38,6 @@ export interface ProvincesResponse {
    * 响应消息
    */
   msg: string;
-  [property: string]: any;
 }
 
 export interface ProvincesData {
@@ -46,7 +45,6 @@ export interface ProvincesData {
    * 可选省份列表
    */
   provinces: Province[];
-  [property: string]: any;
 }
 
 export interface Province {
@@ -58,7 +56,6 @@ export interface Province {
    * 省份名称
    */
   province: string;
-  [property: string]: any;
 }
 
 export interface QueryFormData {

@@ -29,9 +29,13 @@ type ScoreRankData struct {
 // ProcessedScoreRankData represents the processed and optimized score-rank data
 type ProcessedScoreRankData struct {
 	ScoreToRank  map[int]int // 分数到位次的映射
+	RankToScore  map[int]int // 位次到分数的映射
 	MinScore     int         // 最低分数
 	MaxScore     int         // 最高分数
+	MinRank      int         // 最好位次（最小值）
+	MaxRank      int         // 最差位次（最大值）
 	SortedScores []int       // 排序后的分数列表，用于二分查找
+	SortedRanks  []int       // 排序后的位次列表，用于二分查找
 }
 
 // ScoreRankRequest represents the request structure for score rank query
@@ -92,9 +96,13 @@ func getScoreRankCacheKey(province, category string, year int) string {
 func processScoreRankData(rawData *ScoreRankData) *ProcessedScoreRankData {
 	processed := &ProcessedScoreRankData{
 		ScoreToRank:  make(map[int]int),
+		RankToScore:  make(map[int]int),
 		SortedScores: make([]int, 0),
+		SortedRanks:  make([]int, 0),
 		MinScore:     999999,
 		MaxScore:     0,
+		MinRank:      999999,
+		MaxRank:      0,
 	}
 
 	// 处理每个数据项
@@ -105,12 +113,21 @@ func processScoreRankData(rawData *ScoreRankData) *ProcessedScoreRankData {
 			continue
 		}
 
-		processed.ScoreToRank[score] = item.Accumulate
+		rank := item.Accumulate
+		processed.ScoreToRank[score] = rank
+		processed.RankToScore[rank] = score
+
 		if score < processed.MinScore {
 			processed.MinScore = score
 		}
 		if score > processed.MaxScore {
 			processed.MaxScore = score
+		}
+		if rank < processed.MinRank {
+			processed.MinRank = rank
+		}
+		if rank > processed.MaxRank {
+			processed.MaxRank = rank
 		}
 	}
 
@@ -119,8 +136,16 @@ func processScoreRankData(rawData *ScoreRankData) *ProcessedScoreRankData {
 		processed.SortedScores = append(processed.SortedScores, score)
 	}
 
+	// 生成排序后的位次列表，用于快速查找
+	for rank := range processed.RankToScore {
+		processed.SortedRanks = append(processed.SortedRanks, rank)
+	}
+
 	// 按分数从高到低排序
 	sort.Sort(sort.Reverse(sort.IntSlice(processed.SortedScores)))
+
+	// 按位次从小到大排序
+	sort.Ints(processed.SortedRanks)
 
 	return processed
 }
@@ -164,59 +189,95 @@ func loadScoreRankData(province, category string, year int) (*ProcessedScoreRank
 
 // findRankByScore 根据分数查找对应的位次（使用处理后的数据）
 func findRankByScore(processedData *ProcessedScoreRankData, targetScore int) int {
-	// 直接从映射中查找
+	// 直接从映射中查找精确匹配
 	if rank, exists := processedData.ScoreToRank[targetScore]; exists {
 		return rank
 	}
 
-	// 如果没有精确匹配，找到最接近的较低分数的位次
+	// 如果目标分数超出范围，返回边界值
+	if targetScore > processedData.MaxScore {
+		return processedData.MinRank // 分数最高，位次最好（最小）
+	}
+	if targetScore < processedData.MinScore {
+		return processedData.MaxRank // 分数最低，位次最差（最大）
+	}
+
+	// 使用二分查找找到最接近的较低分数
 	// 因为分数越低，位次越高（数字越大）
-	for _, score := range processedData.SortedScores {
-		if score <= targetScore {
-			if rank, exists := processedData.ScoreToRank[score]; exists {
-				return rank
-			}
+	left, right := 0, len(processedData.SortedScores)-1
+	bestScore := processedData.MinScore
+
+	for left <= right {
+		mid := (left + right) / 2
+		score := processedData.SortedScores[mid]
+
+		if score == targetScore {
+			return processedData.ScoreToRank[score]
+		} else if score > targetScore {
+			left = mid + 1
+		} else {
+			// score < targetScore，这是一个候选
+			bestScore = score
+			right = mid - 1
 		}
 	}
 
-	// 如果目标分数比所有记录的分数都高，返回最好的位次（最小值）
-	if targetScore > processedData.MaxScore && len(processedData.SortedScores) > 0 {
-		// 返回最高分数对应的位次
-		highestScore := processedData.SortedScores[0]
-		if rank, exists := processedData.ScoreToRank[highestScore]; exists {
-			return rank
-		}
+	// 返回找到的最接近的较低分数对应的位次
+	if rank, exists := processedData.ScoreToRank[bestScore]; exists {
+		return rank
 	}
 
-	// 如果目标分数比所有记录的分数都低，返回最差的位次（最大值）
-	if targetScore < processedData.MinScore && len(processedData.SortedScores) > 0 {
-		// 返回最低分数对应的位次
-		lowestScore := processedData.SortedScores[len(processedData.SortedScores)-1]
-		if rank, exists := processedData.ScoreToRank[lowestScore]; exists {
-			return rank
-		}
-	}
-
-	return 0
+	return processedData.MaxRank
 }
 
 // findScoreByRank 根据位次查找对应的分数（使用处理后的数据）
 func findScoreByRank(processedData *ProcessedScoreRankData, targetRank int) int {
-	// 遍历所有分数，找到第一个位次大于等于目标位次的分数
-	for _, score := range processedData.SortedScores {
-		if rank, exists := processedData.ScoreToRank[score]; exists {
-			if rank >= targetRank {
-				return score
+	// 直接从映射中查找精确匹配
+	if score, exists := processedData.RankToScore[targetRank]; exists {
+		return score
+	}
+
+	// 如果目标位次超出范围，返回边界值
+	if targetRank < processedData.MinRank {
+		return processedData.MaxScore // 位次最好，分数最高
+	}
+	if targetRank > processedData.MaxRank {
+		return processedData.MinScore // 位次最差，分数最低
+	}
+
+	// 使用二分查找找到最接近的较大位次（较差位次）
+	// 对于位次转分数：如果没有精确匹配，应该返回比目标位次稍差的位次对应的分数
+	// 这样更保守，不会高估学生的分数
+	left, right := 0, len(processedData.SortedRanks)-1
+	result := processedData.MinScore
+
+	for left <= right {
+		mid := (left + right) / 2
+		rank := processedData.SortedRanks[mid]
+
+		if rank == targetRank {
+			return processedData.RankToScore[rank]
+		} else if rank < targetRank {
+			left = mid + 1
+		} else {
+			// rank > targetRank，这个位次比目标位次差，对应的分数更低
+			if score, exists := processedData.RankToScore[rank]; exists {
+				result = score
 			}
+			right = mid - 1
 		}
 	}
 
-	// 如果没有找到，返回0
-	return 0
+	return result
 }
 
 // QueryScoreByRank 根据省份、类别、年份和位次查询对应的分数
 func QueryScoreByRank(province, category string, year, rank int) (int, error) {
+	// 验证输入参数
+	if rank <= 0 {
+		return 0, fmt.Errorf("位次必须大于0")
+	}
+
 	// 验证类别参数
 	if category != "physics" && category != "history" {
 		return 0, fmt.Errorf("类别参数错误，只支持 physics 或 history")
@@ -228,13 +289,27 @@ func QueryScoreByRank(province, category string, year, rank int) (int, error) {
 		return 0, fmt.Errorf("加载数据失败: %v", err)
 	}
 
+	// 验证数据是否为空
+	if len(processedData.SortedRanks) == 0 {
+		return 0, fmt.Errorf("没有找到相关数据")
+	}
+
 	// 查找对应分数
 	score := findScoreByRank(processedData, rank)
+	if score == 0 {
+		return 0, fmt.Errorf("未找到位次 %d 对应的分数", rank)
+	}
+
 	return score, nil
 }
 
 // QueryRankByScore 根据省份、类别、年份和分数查询对应的位次
 func QueryRankByScore(province, category string, year, score int) (int, error) {
+	// 验证输入参数
+	if score <= 0 {
+		return 0, fmt.Errorf("分数必须大于0")
+	}
+
 	// 验证类别参数
 	if category != "physics" && category != "history" {
 		return 0, fmt.Errorf("类别参数错误，只支持 physics 或 history")
@@ -246,8 +321,17 @@ func QueryRankByScore(province, category string, year, score int) (int, error) {
 		return 0, fmt.Errorf("加载数据失败: %v", err)
 	}
 
+	// 验证数据是否为空
+	if len(processedData.SortedScores) == 0 {
+		return 0, fmt.Errorf("没有找到相关数据")
+	}
+
 	// 查找对应位次
 	rank := findRankByScore(processedData, score)
+	if rank == 0 {
+		return 0, fmt.Errorf("未找到分数 %d 对应的位次", score)
+	}
+
 	return rank, nil
 }
 

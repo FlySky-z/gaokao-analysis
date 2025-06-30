@@ -36,6 +36,7 @@ export interface MajorPriorityFormData {
   strategy?: number; // 冲稳保策略 0 冲 1 稳 2 保，默认0冲
   page?: string; // 页码
   page_size?: string; // 每页大小
+  fuzzy_subject_category?: string; // 搜索选项
 }
 
 interface MajorPriorityFormProps {
@@ -120,6 +121,7 @@ export function MajorPriorityForm({ onSubmit, loading = false }: MajorPriorityFo
     strategy: 0, // 默认冲一冲
     page: '1',
     page_size: '20',
+    fuzzy_subject_category: '', // 搜索选项
   });
 
   const [selectedOptionalSubjects, setSelectedOptionalSubjects] = React.useState<string[]>([]);
@@ -482,6 +484,30 @@ export function MajorPriorityForm({ onSubmit, loading = false }: MajorPriorityFo
                   </div>
                 )}
               </div>
+            </div>
+
+            {/* 第四行：专业搜索 */}
+            <div className="space-y-2">
+              <Label htmlFor="fuzzy_search" className="text-base font-medium">
+                专业搜索
+              </Label>
+              <div className="relative">
+                <Input
+                  id="fuzzy_search"
+                  type="text"
+                  placeholder="输入专业名称关键词，如：计算机、医学、经济等"
+                  value={formData.fuzzy_subject_category || ''}
+                  onChange={(e) => setFormData(prev => ({ 
+                    ...prev, 
+                    fuzzy_subject_category: e.target.value 
+                  }))}
+                  className="pl-10"
+                />
+                <IconSearch className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground" size={18} />
+              </div>
+              <p className="text-xs text-muted-foreground">
+                可以搜索专业名称关键词，如：计算机科学、临床医学、国际经济等
+              </p>
             </div>
 
             {/* 高级筛选 */}

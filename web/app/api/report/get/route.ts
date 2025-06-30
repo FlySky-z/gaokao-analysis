@@ -28,7 +28,7 @@ export async function GET(request: NextRequest) {
     apiParams.append('page_size', page_size);
 
     // 调用后端API
-    const backendUrl = process.env.BACKEND_URL || 'http://localhost:8080';
+    const backendUrl = process.env.BACKEND_URL2 || 'http://localhost:8080';
     const response = await fetch(`${backendUrl}/api/report/get?${apiParams.toString()}`, {
       method: 'GET',
       headers: {
