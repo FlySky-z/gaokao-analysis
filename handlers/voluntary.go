@@ -187,13 +187,8 @@ func UniversityPriorityVoluntary(c *gin.Context) {
 		return
 	}
 
-	// 返回成功响应
-	response := &models.VoluntaryUniversityPriorityResponse{
-		Code: 200,
-		Data: *data,
-		Msg:  "查询成功",
-	}
-	c.JSON(http.StatusOK, response)
+	resp := commonSucResp(data, "查询成功")
+	c.JSON(http.StatusOK, resp)
 }
 
 func MajorPriorityVoluntary(c *gin.Context) {
@@ -319,11 +314,6 @@ func GetMajorGroupDetailsHandler(c *gin.Context) {
 		return
 	}
 
-	// 返回成功响应
-	response := &models.VoluntaryMajorGroupResponse{
-		Code: 200,
-		Data: *majorGroup,
-		Msg:  "查询成功",
-	}
-	c.JSON(http.StatusOK, response)
+	resp := commonSucResp(majorGroup, "查询成功")
+	c.JSON(http.StatusOK, resp)
 }

@@ -2,33 +2,36 @@ package handlers
 
 import "github.com/google/uuid"
 
-type CommonResponse struct {
-	Code    int    `json:"code"`
-	Msg     string `json:"msg"`
-	TraceId string `json:"trace_id"`
+type CommonInfoResponse struct {
+	Code int    `json:"code"`
+	Msg  string `json:"msg"`
 }
 
-func commonSucResp(msg string) *CommonResponse {
-	return &CommonResponse{
-		Code:    200,
-		Msg:     msg,
-		TraceId: GenerateTraceID(),
+type CommonDataResponse struct {
+	Code int         `json:"code"`
+	Msg  string      `json:"msg"`
+	Data interface{} `json:"data"`
+}
+
+func commonSucResp(data interface{}, msg string) *CommonDataResponse {
+	return &CommonDataResponse{
+		Code: 200,
+		Msg:  msg,
+		Data: data,
 	}
 }
 
-func commonErrResp(code int, msg string) *CommonResponse {
-	return &CommonResponse{
-		Code:    code,
-		Msg:     msg,
-		TraceId: GenerateTraceID(),
+func clientErrResp(code int, msg string) *CommonInfoResponse {
+	return &CommonInfoResponse{
+		Code: code,
+		Msg:  msg,
 	}
 }
 
-func serverErrResp(msg string) *CommonResponse {
-	return &CommonResponse{
-		Code:    500,
-		Msg:     msg,
-		TraceId: GenerateTraceID(),
+func serverErrResp(msg string) *CommonInfoResponse {
+	return &CommonInfoResponse{
+		Code: 500,
+		Msg:  msg,
 	}
 }
 
