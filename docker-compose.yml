@@ -12,14 +12,47 @@ services:
     volumes:
       - mysql-data:/var/lib/mysql
   
-  promtail:
-    image: swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/grafana/promtail:3.4.2-linuxarm64
-    container_name: promtail
+  frpc:
+    image: snowdreamtech/frpc
+    container_name: frpc
+    restart: unless-stopped
     volumes:
-      - ./promtail-config.yaml:/etc/promtail/config.yaml:ro
-      - ./logs:/var/log/myapp
-      - ./positions:/tmp
-    command: -config.file=/etc/promtail/config.yaml
+      - ./build/frpc.toml:/etc/frp/frpc.toml:ro
+    command: -c /etc/frp/frpc.toml
+    network_mode: host
+  
+  # promtail:
+  #   image: swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/grafana/promtail:3.4.2-linuxarm64
+  #   container_name: promtail
+  #   volumes:
+  #     - ./promtail-config.yaml:/etc/promtail/config.yaml:ro
+  #     - ./logs:/var/log/myapp
+  #     - ./positions:/tmp
+  #   command: -config.file=/etc/promtail/config.yaml
+  
+  web:
+    image: gaokao-web:latest
+    container_name: gaokao-web
+    env_file:
+      - web/.env.docker
+    ports:
+      - "${WEB_PORT:-13000}:3000"
+    depends_on:
+      - mariadb
+    restart: unless-stopped
+
+  # app:
+  #   image: gaokao:latest
+  #   container_name: gaokao-app
+  #   env_file:
+  #     - .env
+  #   ports:
+  #     - "${APP_PORT:-8080}:8080"
+  #   depends_on:
+  #     - mariadb
+  #   volumes:
+  #     - ./logs:/app/logs
+  #   restart: unless-stopped
 
 volumes:
   mysql-data:

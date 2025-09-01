@@ -126,7 +126,7 @@ func CreateUserProfile(request *UserProfileRequest) (*UserProfile, error) {
 	}
 
 	// Save to database
-	db := database.GetMySQL()
+	db := database.GetDB()
 	if result := db.Create(userProfile); result.Error != nil {
 		return nil, result.Error
 	}
@@ -137,7 +137,7 @@ func CreateUserProfile(request *UserProfileRequest) (*UserProfile, error) {
 // GetUserProfileByID retrieves a user profile by ID
 func GetUserProfileByID(id string) (*UserProfile, error) {
 	var userProfile UserProfile
-	db := database.GetMySQL()
+	db := database.GetDB()
 	if result := db.First(&userProfile, "id = ?", id); result.Error != nil {
 		return nil, result.Error
 	}

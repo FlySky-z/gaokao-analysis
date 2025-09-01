@@ -116,13 +116,14 @@ func UniversityPriorityVoluntary(c *gin.Context) {
 	contentType := c.ContentType()
 	var err error
 
-	if contentType == "application/json" {
+	switch contentType {
+	case "application/json":
 		// JSON绑定
 		err = c.ShouldBindJSON(&request)
-	} else if contentType == "multipart/form-data" {
+	case "multipart/form-data":
 		// 表单绑定
 		err = c.ShouldBindWith(&request, binding.FormMultipart)
-	} else {
+	default:
 		// 默认绑定（包括x-www-form-urlencoded）
 		err = c.ShouldBind(&request)
 	}
@@ -193,6 +194,10 @@ func UniversityPriorityVoluntary(c *gin.Context) {
 		Msg:  "查询成功",
 	}
 	c.JSON(http.StatusOK, response)
+}
+
+func MajorPriorityVoluntary(c *gin.Context) {
+	c.JSON(500, serverErrResp("not implement this method"))
 }
 
 // handleFormFieldConversions 处理表单字段的特殊转换
@@ -303,7 +308,7 @@ func GetMajorGroupDetailsHandler(c *gin.Context) {
 	defer cancel()
 
 	// 调用查询函数
-	majorGroup, err := models.GetMajorGroupDetails(ctx, &request)
+	majorGroup, err := models.GetMajorGroupDetail(ctx, &request)
 	if err != nil {
 		slog.Error("获取专业组详情失败",
 			"error", err.Error(),

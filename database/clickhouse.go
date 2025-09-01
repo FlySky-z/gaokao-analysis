@@ -4,46 +4,53 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"gaokao-data-analysis/utils"
 	"log/slog"
 	"time"
 
 	"github.com/ClickHouse/clickhouse-go/v2"
 )
 
-var ClickHouse *sql.DB // 全局 ClickHouse 数据库连接变量
-
-// InitClickHouse 初始化 ClickHouse 数据库连接
-func InitClickHouse(option *clickhouse.Options) error {
-	conn := clickhouse.OpenDB(option) // 创建数据库连接
-
-	// 设置连接池参数
-	conn.SetMaxIdleConns(5)
-	conn.SetMaxOpenConns(20)
-	conn.SetConnMaxLifetime(time.Hour)
+// initClickHouse 初始化 ClickHouse 数据库连接
+func initClickHouse() (*sql.DB, error) {
+	option := loadClickHouseConfig()
+	conn := clickhouse.OpenDB(option)
 
 	// 测试数据库连接
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second) // 设置超时时间为10秒
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
 	if err := conn.PingContext(ctx); err != nil {
-		return fmt.Errorf("连接 ClickHouse 失败: %w", err)
+		return nil, fmt.Errorf("连接 ClickHouse 失败: %w", err)
 	}
 
-	ClickHouse = conn // 赋值给全局变量
-
-	// 使用结构化日志记录连接成功信息
 	slog.Info("ClickHouse连接成功",
 		"host", option.Addr[0],
 		"database", option.Auth.Database,
-		"max_idle_conns", 5,
-		"max_open_conns", 20,
-		"conn_max_lifetime", "1h",
 	)
 
-	return nil
+	return conn, nil
 }
 
-// GetClickHouse 返回已初始化的 ClickHouse 数据库连接
-func GetClickHouse() *sql.DB {
-	return ClickHouse
+// loadClickHouseConfig 加载 ClickHouse 数据库配置
+func loadClickHouseConfig() *clickhouse.Options {
+	return &clickhouse.Options{
+		Addr: []string{
+			fmt.Sprintf("%s:%d",
+				utils.GetEnv("CLICKHOUSE_HOST", "localhost"),
+				utils.GetIntEnv("CLICKHOUSE_PORT", 9000)),
+		},
+		Auth: clickhouse.Auth{
+			Database: utils.GetEnv("CLICKHOUSE_DATABASE", "default"),
+			Username: utils.GetEnv("CLICKHOUSE_USER", "default"),
+			Password: utils.GetEnv("CLICKHOUSE_PASSWORD", ""),
+		},
+		Settings: clickhouse.Settings{
+			"max_execution_time": 60,
+		},
+		DialTimeout: 5 * time.Second,
+		Compression: &clickhouse.Compression{
+			Method: clickhouse.CompressionLZ4,
+		},
+	}
 }

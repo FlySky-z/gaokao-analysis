@@ -12,18 +12,17 @@ import (
 func SetupRouter() *gin.Engine {
 	mode := os.Getenv("GIN_MODE")
 	if mode == "" {
-		mode = gin.ReleaseMode // or gin.DebugMode if you prefer
+		mode = gin.ReleaseMode
 	}
 	gin.SetMode(mode)
 
 	r := gin.Default()
 
-	// Health Check Route
-	r.GET("/health", handlers.HealthCheck)
-
 	// API Routes
 	api := r.Group("/api")
 	{
+		// Health Check Route
+		api.GET("/health", handlers.HealthCheck)
 		// User Profile Routes
 		api.POST("/profile/create", handlers.CreateUserProfile)
 		api.GET("/profile/:id", handlers.GetUserProfile)
@@ -32,6 +31,7 @@ func SetupRouter() *gin.Engine {
 		voluntary := api.Group("/voluntary")
 		{
 			voluntary.POST("/universityPriority", handlers.UniversityPriorityVoluntary)
+			voluntary.POST("/majorPriority", handlers.MajorPriorityVoluntary)
 			voluntary.POST("/majorGroup", handlers.GetMajorGroupDetailsHandler)
 		}
 

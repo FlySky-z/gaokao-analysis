@@ -63,11 +63,7 @@ AUTH_SECRET="your-secret-key"
 4. 初始化数据库
 
 ```bash
-# 生成Prisma客户端
-npx prisma generate
-
-# 创建并应用数据库迁移
-npx prisma db push
+npx ts-node -r dotenv/config ./scripts/sequelize-init.ts
 ```
 
 这将：
@@ -130,7 +126,6 @@ scripts/             # 工具脚本
 - **前端框架**: Next.js 15
 - **UI组件**: shadcn/ui
 - **状态管理**: React Hooks
-- **数据库**: SQLite (通过Prisma)
 - **认证**: NextAuth.js
 
 ## 开发

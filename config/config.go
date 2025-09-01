@@ -3,6 +3,8 @@ package config
 import (
 	"fmt"
 	"gaokao-data-analysis/database"
+	"gaokao-data-analysis/logs"
+	"gaokao-data-analysis/models"
 	"os"
 
 	"github.com/joho/godotenv"
@@ -25,35 +27,19 @@ func InitConfig() error {
 		return fmt.Errorf("加载配置失败: %w", err)
 	}
 
-	// 加载日志配置并初始化日志系统
-	logConfig, err := LoadLogConfig()
-	if err != nil {
-		return fmt.Errorf("加载日志配置失败: %w", err)
+	// 初始化数据库
+	if err := database.InitDatabase(); err != nil {
+		return fmt.Errorf("初始化数据库失败: %w", err)
 	}
 
-	if err := InitLogger(logConfig); err != nil {
+	// 自动迁移数据库模型
+	if err := database.GetDB().AutoMigrate(&models.UserProfile{}); err != nil {
+		return fmt.Errorf("自动迁移数据库模型失败: %w", err)
+	}
+
+	// 初始化日志系统
+	if err := logs.InitLogger(); err != nil {
 		return fmt.Errorf("初始化日志系统失败: %w", err)
 	}
-
-	// 加载 MySQL 和 ClickHouse 配置
-	mysqlConfig, err := LoadMySQLConfig()
-	if err != nil {
-		return fmt.Errorf("加载 MySQL 配置失败: %w", err)
-	}
-
-	clickHouseConfig, err := LoadClickHouseConfig()
-	if err != nil {
-		return fmt.Errorf("加载 ClickHouse 配置失败: %w", err)
-	}
-
-	// 初始化数据库
-	if err := database.InitMySQL(mysqlConfig.dsn()); err != nil {
-		return fmt.Errorf("初始化 MySQL 失败: %w", err)
-	}
-
-	if err := database.InitClickHouse(clickHouseConfig.createOption()); err != nil {
-		return fmt.Errorf("初始化 ClickHouse 失败: %w", err)
-	}
-
 	return nil
 }

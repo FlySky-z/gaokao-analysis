@@ -11,6 +11,10 @@ import (
 	"gaokao-data-analysis/database"
 )
 
+var (
+	TABLE = "gaokao2025" // ClickHouse表名
+)
+
 // VoluntaryUniversityPriorityRequest 志愿-院校优先查询请求
 type VoluntaryUniversityPriorityRequest struct {
 	// 选择城市，使用逗号分隔（不选择省份，仅选择城市）
@@ -147,78 +151,127 @@ type VoluntaryMajor struct {
 	Year string `json:"year"`
 }
 
-// 科目字符串转换为位图
-func SubjectsToBitmap(subjectsStr string) int {
-	// 科目映射表
-	subjectMap := map[string]int{
-		"物理": 1,  // 2^0
-		"化学": 2,  // 2^1
-		"生物": 4,  // 2^2
-		"政治": 8,  // 2^3
-		"历史": 16, // 2^4
-		"地理": 32, // 2^5
-	}
-
-	// 如果为空，返回0（不限制科目）
-	if subjectsStr == "" {
-		return 0
-	}
-
-	subjects := strings.Split(subjectsStr, ",")
-	bitmap := 0
-
-	for _, subject := range subjects {
-		if bit, exists := subjectMap[strings.TrimSpace(subject)]; exists {
-			bitmap |= bit
-		}
-	}
-
-	return bitmap
+// SubjectFilter 科目筛选器
+type SubjectFilter struct {
+	RequirePhysics   bool
+	RequireChemistry bool
+	RequireBiology   bool
+	RequirePolitics  bool
+	RequireHistory   bool
+	RequireGeography bool
+	SubjectCategory  string // "物理" 或 "历史"
 }
 
-// ValidateSubjects 验证科目组合，必须包含物理或历史
-func ValidateSubjects(subjectsStr string) error {
+// SchoolGroupPair 学校代码和专业组代码对
+type SchoolGroupPair struct {
+	SchoolCode string
+	GroupCode  string
+}
+
+// ParseSubjects 解析科目字符串为筛选器
+func ParseSubjects(subjectsStr string) (*SubjectFilter, error) {
 	if subjectsStr == "" {
-		return fmt.Errorf("科目不能为空，必须包含物理或历史")
+		return nil, fmt.Errorf("科目不能为空")
 	}
 
+	filter := &SubjectFilter{}
 	subjects := strings.Split(subjectsStr, ",")
+
 	hasPhysics := false
 	hasHistory := false
 
 	for _, subject := range subjects {
 		subject = strings.TrimSpace(subject)
-		if subject == "物理" {
+		switch subject {
+		case "物理":
+			filter.RequirePhysics = true
 			hasPhysics = true
-		} else if subject == "历史" {
+		case "化学":
+			filter.RequireChemistry = true
+		case "生物":
+			filter.RequireBiology = true
+		case "政治":
+			filter.RequirePolitics = true
+		case "历史":
+			filter.RequireHistory = true
 			hasHistory = true
+		case "地理":
+			filter.RequireGeography = true
 		}
 	}
 
+	// 验证必须包含物理或历史
 	if !hasPhysics && !hasHistory {
-		return fmt.Errorf("科目组合必须包含物理或历史")
+		return nil, fmt.Errorf("科目组合必须包含物理或历史")
 	}
 
-	return nil
+	// 设置科目类别
+	if hasPhysics {
+		filter.SubjectCategory = "物理"
+	} else {
+		filter.SubjectCategory = "历史"
+	}
+
+	return filter, nil
+}
+
+// BuildSubjectConditions 构建科目相关的查询条件
+func (sf *SubjectFilter) BuildSubjectConditions() ([]string, []interface{}) {
+	var conditions []string
+	var args []interface{}
+
+	// 主科目类别条件（物理或历史）
+	if sf.SubjectCategory != "" {
+		conditions = append(conditions, "subject_category = ?")
+		if sf.SubjectCategory == "物理" {
+			args = append(args, 1) // 物理=1
+		} else {
+			args = append(args, 2) // 历史=2
+		}
+	}
+
+	// 具体科目要求条件 - 使用OR逻辑
+	var subjectOrConditions []string
+	if sf.RequirePhysics {
+		subjectOrConditions = append(subjectOrConditions, "require_physics = true")
+	}
+	if sf.RequireChemistry {
+		subjectOrConditions = append(subjectOrConditions, "require_chemistry = true")
+	}
+	if sf.RequireBiology {
+		subjectOrConditions = append(subjectOrConditions, "require_biology = true")
+	}
+	if sf.RequirePolitics {
+		subjectOrConditions = append(subjectOrConditions, "require_politics = true")
+	}
+	if sf.RequireHistory {
+		subjectOrConditions = append(subjectOrConditions, "require_history = true")
+	}
+	if sf.RequireGeography {
+		subjectOrConditions = append(subjectOrConditions, "require_geography = true")
+	}
+
+	// 如果有科目要求条件，用OR连接
+	if len(subjectOrConditions) > 0 {
+		conditions = append(conditions, "("+strings.Join(subjectOrConditions, " OR ")+")")
+	}
+
+	return conditions, args
+}
+
+// ValidateSubjects 验证科目组合，必须包含物理或历史
+func ValidateSubjects(subjectsStr string) error {
+	_, err := ParseSubjects(subjectsStr)
+	return err
 }
 
 // GetSubjectType 获取科目类型（物理或历史）
 func GetSubjectType(subjectsStr string) string {
-	if subjectsStr == "" {
+	filter, err := ParseSubjects(subjectsStr)
+	if err != nil {
 		return ""
 	}
-
-	subjects := strings.Split(subjectsStr, ",")
-	for _, subject := range subjects {
-		subject = strings.TrimSpace(subject)
-		if subject == "物理" {
-			return "物理"
-		} else if subject == "历史" {
-			return "历史"
-		}
-	}
-
-	return ""
+	return filter.SubjectCategory
 }
 
 // 计算录取概率
@@ -254,7 +307,173 @@ func GetStrategy(userScore, minScore int32) int32 {
 	}
 }
 
-// GetUniversityPriorityVoluntary 查询志愿-院校优先
+// QueryBuilder 查询构建器
+type QueryBuilder struct {
+	baseQuery  string
+	conditions []string
+	args       []interface{}
+}
+
+// NewQueryBuilder 创建新的查询构建器
+func NewQueryBuilder(baseQuery string) *QueryBuilder {
+	return &QueryBuilder{
+		baseQuery:  baseQuery,
+		conditions: make([]string, 0),
+		args:       make([]interface{}, 0),
+	}
+}
+
+// AddCondition 添加查询条件
+func (qb *QueryBuilder) AddCondition(condition string, args ...interface{}) {
+	qb.conditions = append(qb.conditions, condition)
+	qb.args = append(qb.args, args...)
+}
+
+// AddConditions 批量添加查询条件
+func (qb *QueryBuilder) AddConditions(conditions []string, args []interface{}) {
+	qb.conditions = append(qb.conditions, conditions...)
+	qb.args = append(qb.args, args...)
+}
+
+// Build 构建最终查询语句
+func (qb *QueryBuilder) Build() (string, []interface{}) {
+	query := qb.baseQuery
+	if len(qb.conditions) > 0 {
+		query += " AND " + strings.Join(qb.conditions, " AND ")
+	}
+	return query, qb.args
+}
+
+// EnumMapper 枚举映射器
+type EnumMapper struct {
+	provinceMap   map[string]int
+	ownershipMap  map[string]int
+	educationMap  map[string]int
+	admissionMap  map[string]int
+	enrollmentMap map[string]int
+	subjectCatMap map[string]int
+}
+
+// NewEnumMapper 创建枚举映射器
+func NewEnumMapper() *EnumMapper {
+	return &EnumMapper{
+		provinceMap: map[string]int{
+			"湖北": 1,
+		},
+		ownershipMap: map[string]int{
+			"公办":         1,
+			"内地与港澳台合作办学": 2,
+			"中外合作办学":     3,
+			"民办":         4,
+			"境外高校独立办学":   5,
+		},
+		educationMap: map[string]int{
+			"本科":   1,
+			"职业本科": 2,
+			"专科":   3,
+		},
+		admissionMap: map[string]int{
+			"本科批": 1,
+			"专科批": 2,
+		},
+		enrollmentMap: map[string]int{
+			"":            1,
+			"国家专项计划":      2,
+			"地方专项计划":      3,
+			"专本联合培养":      4,
+			"单设志愿-高校专项":   5,
+			"单设志愿-高水平运动队": 6,
+		},
+		subjectCatMap: map[string]int{
+			"物理": 1,
+			"历史": 2,
+		},
+	}
+}
+
+// MapProvince 映射省份枚举值
+func (em *EnumMapper) MapProvince(province string) (int, bool) {
+	val, exists := em.provinceMap[province]
+	return val, exists
+}
+
+// MapOwnership 映射办学性质枚举值
+func (em *EnumMapper) MapOwnership(ownership string) (int, bool) {
+	val, exists := em.ownershipMap[ownership]
+	return val, exists
+}
+
+// MapSubjectCategory 映射科目类别枚举值
+func (em *EnumMapper) MapSubjectCategory(category string) (int, bool) {
+	val, exists := em.subjectCatMap[category]
+	return val, exists
+}
+
+// ScoreRangeCalculator 分数范围计算器
+type ScoreRangeCalculator struct{}
+
+// CalculateRange 根据策略计算分数范围
+func (src *ScoreRangeCalculator) CalculateRange(userScore int32, strategy int32) (minDiff, maxDiff int32) {
+	switch strategy {
+	case 0: // 冲
+		return 3, 20 // 分数比最低分高3-20分
+	case 1: // 稳
+		return -5, 3 // 分数比最低分低5分到高3分
+	case 2: // 保
+		return -20, -5 // 分数比最低分低20-5分
+	default:
+		return -5, 3 // 默认稳策略
+	}
+}
+
+// ProfileManager 用户档案管理器
+type ProfileManager struct{}
+
+// ApplyProfileToRequest 将用户档案应用到请求中
+func (pm *ProfileManager) ApplyProfileToRequest(profileID string, req interface{}) error {
+	if profileID == "" {
+		return nil
+	}
+
+	profile, err := GetUserProfileByID(profileID)
+	if err != nil || profile == nil {
+		return err
+	}
+
+	// 根据请求类型应用档案信息
+	switch r := req.(type) {
+	case *VoluntaryUniversityPriorityRequest:
+		if profile.Province != "" && r.Province == "" {
+			r.Province = profile.Province
+		}
+		if profile.Score > 0 && r.Score == 0 {
+			r.Score = profile.Score
+		}
+		if profile.Rank > 0 && r.Rank == 0 {
+			r.Rank = profile.Rank
+		}
+		if len(profile.Subjects) > 0 && r.Subjects == "" {
+			r.Subjects = strings.Join(profile.Subjects, ",")
+		}
+	case *VoluntaryMajorGroupRequest:
+		if profile.Province != "" && r.Province == "" {
+			r.Province = profile.Province
+		}
+		if profile.Score > 0 && r.Score == 0 {
+			r.Score = profile.Score
+		}
+		if profile.Rank > 0 && r.Rank == 0 {
+			r.Rank = profile.Rank
+		}
+		if len(profile.Subjects) > 0 && r.Subjects == "" {
+			r.Subjects = strings.Join(profile.Subjects, ",")
+		}
+	}
+
+	return nil
+}
+
+// GetUniversityPriorityVoluntary 查询志愿-院校优先（重构版）
 func GetUniversityPriorityVoluntary(ctx context.Context, req *VoluntaryUniversityPriorityRequest) (*VoluntaryUniversityPriorityData, error) {
 	startTime := time.Now()
 
@@ -264,101 +483,58 @@ func GetUniversityPriorityVoluntary(ctx context.Context, req *VoluntaryUniversit
 		return nil, fmt.Errorf("ClickHouse连接未初始化")
 	}
 
-	// 构建基础查询
-	baseQuery := `
-		SELECT 
-			plan_school_code as recruit_code,
-			plan_school_name as university_name,
-			school_info_province as province,
-			school_info_level_list as category,
-			school_info_tags_list as tags,
-			plan_major_group_code as group_code,
-			count(*) as major_count
-		FROM gaokao_data
-		WHERE 1=1
-	`
+	// 初始化辅助器
+	enumMapper := NewEnumMapper()
+	profileManager := &ProfileManager{}
+	scoreCalculator := &ScoreRangeCalculator{}
 
-	// 构建查询条件
-	var conditions []string
-	var args []interface{}
-
-	// 处理用户档案
-	if req.ProfileID != "" {
-		// 查询用户档案
-		profile, err := GetUserProfileByID(req.ProfileID)
-		if err == nil && profile != nil {
-			// 使用用户档案中的信息
-			if profile.Province != "" {
-				conditions = append(conditions, "source_location = ?")
-				args = append(args, profile.Province)
-			}
-
-			if profile.Score > 0 {
-				req.Score = profile.Score
-			}
-
-			if profile.Rank > 0 {
-				req.Rank = profile.Rank
-			}
-
-			if len(profile.Subjects) > 0 {
-				req.Subjects = strings.Join(profile.Subjects, ",")
-			}
-		}
+	// 应用用户档案信息
+	if err := profileManager.ApplyProfileToRequest(req.ProfileID, req); err != nil {
+		slog.Warn("应用用户档案失败", "error", err.Error())
 	}
 
-	// 验证科目组合（必须包含物理或历史）
+	// 验证科目组合
 	if err := ValidateSubjects(req.Subjects); err != nil {
 		return nil, fmt.Errorf("科目验证失败: %w", err)
 	}
 
-	// 处理省份
+	// 构建基础查询
+	baseQuery := fmt.Sprintf(`SELECT 
+	school_code as recruit_code,
+	school_name as university_name,
+	school_province as province,
+	school_type as category,
+	school_tags as tags,
+	major_group_code as group_code,
+	count(*) as major_count
+FROM %s
+WHERE 1=1
+`, TABLE)
+
+	queryBuilder := NewQueryBuilder(baseQuery)
+
+	// 处理省份条件
 	if req.Province != "" {
-		conditions = append(conditions, "source_location = ?")
-		args = append(args, req.Province)
+		if provinceVal, exists := enumMapper.MapProvince(req.Province); exists {
+			queryBuilder.AddCondition("source_province = ?", provinceVal)
+		}
 	}
 
-	// 处理分数范围
+	// 处理分数范围条件
 	if req.Score > 0 {
-		// 根据策略调整分数范围
-		strategy := req.Strategy
-
-		var minScoreDiff, maxScoreDiff int32
-
-		switch strategy {
-		case 0: // 冲
-			minScoreDiff = 3  // 分数比最低分高3分
-			maxScoreDiff = 20 // 分数比最低分高20分
-		case 1: // 稳
-			minScoreDiff = -5 // 分数比最低分低5分
-			maxScoreDiff = 3  // 分数比最低分高3分
-		case 2: // 保
-			minScoreDiff = -20 // 分数比最低分低20分
-			maxScoreDiff = -5  // 分数比最低分低5分
-		}
-
-		conditions = append(conditions, "admission_2024_min_score >= ?")
-		args = append(args, req.Score+minScoreDiff)
-
-		conditions = append(conditions, "admission_2024_min_score <= ?")
-		args = append(args, req.Score+maxScoreDiff)
+		minDiff, maxDiff := scoreCalculator.CalculateRange(req.Score, req.Strategy)
+		queryBuilder.AddCondition("min_score_2024 >= ?", req.Score+minDiff)
+		queryBuilder.AddCondition("min_score_2024 <= ?", req.Score+maxDiff)
 	}
 
-	// 处理科目类型过滤（物理或历史）
+	// 处理科目条件
 	if req.Subjects != "" {
-		subjectType := GetSubjectType(req.Subjects)
-		if subjectType != "" {
-			conditions = append(conditions, "plan_subject_type = ?")
-			args = append(args, subjectType)
+		subjectFilter, err := ParseSubjects(req.Subjects)
+		if err != nil {
+			return nil, fmt.Errorf("解析科目失败: %w", err)
 		}
-
-		// 处理其他科目限制
-		subjectBitmap := SubjectsToBitmap(req.Subjects)
-		if subjectBitmap > 0 {
-			// 检查科目位图是否匹配
-			conditions = append(conditions, "(plan_subject_restriction_bit = 0 OR bitAnd(plan_subject_restriction_bit, ?) = plan_subject_restriction_bit)")
-			args = append(args, subjectBitmap)
-		}
+		subjectConditions, subjectArgs := subjectFilter.BuildSubjectConditions()
+		queryBuilder.AddConditions(subjectConditions, subjectArgs)
 	}
 
 	// 处理城市筛选
@@ -366,64 +542,25 @@ func GetUniversityPriorityVoluntary(ctx context.Context, req *VoluntaryUniversit
 		cities := strings.Split(req.Citys, ",")
 		if len(cities) > 0 {
 			citiesCondition := make([]string, len(cities))
+			var cityArgs []interface{}
 			for i, city := range cities {
-				citiesCondition[i] = "school_info_city = ?"
-				args = append(args, strings.TrimSpace(city))
+				citiesCondition[i] = "school_city = ?"
+				cityArgs = append(cityArgs, strings.TrimSpace(city))
 			}
-			conditions = append(conditions, "("+strings.Join(citiesCondition, " OR ")+")")
+			queryBuilder.AddCondition("("+strings.Join(citiesCondition, " OR ")+")", cityArgs...)
 		}
 	}
 
 	// 处理院校类型筛选
 	if req.CollegeType != "" {
-		collegeTypes := strings.Split(req.CollegeType, ",")
-		if len(collegeTypes) > 0 {
-			// 分类处理不同类型的筛选条件，并保持条件与参数的顺序一致
-			var publicPrivateConditions []string
-			var publicPrivateArgs []interface{}
-			var tagsConditions []string
-			var tagsArgs []interface{}
-			// TODO: 考虑增加院校的水平查询
-			// var levelConditions []string
-
-			for _, colType := range collegeTypes {
-				colType = strings.TrimSpace(colType)
-				// 根据不同的类型添加不同的筛选条件
-				switch {
-				case colType == "公办" || colType == "民办":
-					publicPrivateConditions = append(publicPrivateConditions, "school_info_public_private = ?")
-					publicPrivateArgs = append(publicPrivateArgs, colType)
-				default:
-					// 假设其他为院校类型
-					tagsConditions = append(tagsConditions, "has(school_info_tags_list, ?)")
-					tagsArgs = append(tagsArgs, colType)
-				}
-			}
-
-			// 合并各类条件，并按顺序添加参数
-			var typeConditions []string
-			if len(publicPrivateConditions) > 0 {
-				typeConditions = append(typeConditions, "("+strings.Join(publicPrivateConditions, " OR ")+")")
-				args = append(args, publicPrivateArgs...)
-			}
-			if len(tagsConditions) > 0 {
-				typeConditions = append(typeConditions, "("+strings.Join(tagsConditions, " OR ")+")")
-				args = append(args, tagsArgs...)
-			}
-
-			if len(typeConditions) > 0 {
-				conditions = append(conditions, "("+strings.Join(typeConditions, " AND ")+")")
-			}
+		if err := buildCollegeTypeConditions(queryBuilder, enumMapper, req.CollegeType); err != nil {
+			return nil, fmt.Errorf("构建院校类型条件失败: %w", err)
 		}
 	}
 
-	// 添加筛选条件到查询
-	if len(conditions) > 0 {
-		baseQuery += " AND " + strings.Join(conditions, " AND ")
-	}
-
 	// 添加分组和排序
-	baseQuery += `
+	finalQuery, args := queryBuilder.Build()
+	finalQuery += `
 		GROUP BY 
 			recruit_code, 
 			university_name, 
@@ -435,7 +572,7 @@ func GetUniversityPriorityVoluntary(ctx context.Context, req *VoluntaryUniversit
 			university_name ASC
 	`
 
-	// 添加分页
+	// 处理分页
 	if req.Page <= 0 {
 		req.Page = 1
 	}
@@ -443,121 +580,29 @@ func GetUniversityPriorityVoluntary(ctx context.Context, req *VoluntaryUniversit
 		req.PageSize = 20
 	}
 
-	limit := req.PageSize
-	offset := (req.Page - 1) * req.PageSize
-
-	// 先查询不带分页的结果总数
-	// 构建总数查询 - 只计算满足条件的不同学校数量
-	countQuery := `
-		SELECT count(DISTINCT plan_school_name) 
-		FROM gaokao_data
-		WHERE 1=1
-	`
-
-	// 添加相同的筛选条件到计数查询
-	if len(conditions) > 0 {
-		countQuery += " AND " + strings.Join(conditions, " AND ")
-	}
-
-	// 执行总数查询
-	slog.Info("查询符合条件的院校总数", "query", countQuery, "args", args)
-
-	var total int64
-	err := db.QueryRowContext(ctx, countQuery, args...).Scan(&total)
+	// 查询总数
+	total, err := queryUniversityCount(ctx, db, queryBuilder)
 	if err != nil {
-		slog.Error("查询志愿总数失败", "error", err.Error())
-		return nil, fmt.Errorf("查询志愿总数失败: %w", err)
+		return nil, fmt.Errorf("查询总数失败: %w", err)
 	}
-
-	slog.Info("查询志愿院校总数完成",
-		"total", total,
-		"duration", time.Since(startTime).String(),
-		"page", req.Page,
-		"pageSize", req.PageSize,
-	)
 
 	// 添加分页限制
-	paginatedQuery := baseQuery + fmt.Sprintf(" LIMIT %d OFFSET %d", limit, offset)
+	limit := req.PageSize
+	offset := (req.Page - 1) * req.PageSize
+	paginatedQuery := finalQuery + fmt.Sprintf(" LIMIT %d OFFSET %d", limit, offset)
 
-	// 执行查询
-	slog.Info("查询志愿院校分页", "query", paginatedQuery, "args", args)
-
-	rows, err := db.QueryContext(ctx, paginatedQuery, args...)
+	// 执行分页查询
+	resultItems, err := executeUniversityQuery(ctx, db, paginatedQuery, args, req)
 	if err != nil {
-		slog.Error("查询志愿院校分页失败", "error", err.Error())
-		return nil, fmt.Errorf("查询志愿院校分页失败: %w", err)
-	}
-	defer rows.Close()
-
-	// 处理结果
-	var resultItems []*VoluntaryUniversityItem             // 使用指针切片
-	schoolMap := make(map[string]*VoluntaryUniversityItem) // 使用院校名称作为键
-
-	for rows.Next() {
-		var recruitCode, universityName, province, groupCode string
-		var category, tags []string
-		var majorCount int
-
-		if err := rows.Scan(&recruitCode, &universityName, &province, &category, &tags, &groupCode, &majorCount); err != nil {
-			slog.Error("扫描志愿院校结果失败", "error", err.Error())
-			continue
-		}
-
-		// 检查学校是否已经存在
-		schoolItem, exists := schoolMap[universityName]
-		if !exists {
-			// 创建新的院校条目
-			schoolItem = &VoluntaryUniversityItem{
-				RecruitCode:    recruitCode, // 仍然保留招生代码，但不用作映射键
-				UniversityName: universityName,
-				Province:       province,
-				Category:       category,
-				Tags:           tags,
-				MajorGroup:     []VoluntaryMajorGroup{},
-			}
-			schoolMap[universityName] = schoolItem
-			resultItems = append(resultItems, schoolItem) // 使用指针
-		}
-
-		// 获取专业组信息
-		majorGroupReq := &VoluntaryMajorGroupRequest{
-			SchoolCode: recruitCode,
-			GroupCode:  groupCode,
-			Province:   req.Province,
-			ProfileID:  req.ProfileID,
-			Score:      req.Score,
-			Rank:       req.Rank,
-			Strategy:   req.Strategy,
-			Subjects:   req.Subjects,
-		}
-
-		majorGroup, err := GetMajorGroupDetails(ctx, majorGroupReq)
-		if err != nil {
-			slog.Error("获取专业组信息失败",
-				"error", err.Error(),
-				"school", universityName,
-				"recruitCode", recruitCode,
-				"groupCode", groupCode,
-			)
-			continue
-		}
-
-		// 添加专业组到院校
-		schoolItem.MajorGroup = append(schoolItem.MajorGroup, *majorGroup)
+		return nil, fmt.Errorf("执行查询失败: %w", err)
 	}
 
 	// 计算分页信息
 	pageNum := (int32(total) + req.PageSize - 1) / req.PageSize
 
-	// 将指针切片转换为值切片
-	result := make([]VoluntaryUniversityItem, len(resultItems))
-	for i, item := range resultItems {
-		result[i] = *item
-	}
-
 	// 创建响应数据
 	data := &VoluntaryUniversityPriorityData{
-		List:     result,
+		List:     resultItems,
 		Page:     req.Page,
 		PageSize: req.PageSize,
 		PageNum:  pageNum,
@@ -569,21 +614,172 @@ func GetUniversityPriorityVoluntary(ctx context.Context, req *VoluntaryUniversit
 		"duration", time.Since(startTime).String(),
 		"page", req.Page,
 		"pageSize", req.PageSize,
-		"resultCount", len(result),
-		"majorGroupCount", func() int {
-			count := 0
-			for _, item := range result {
-				count += len(item.MajorGroup)
-			}
-			return count
-		}(),
+		"resultCount", len(resultItems),
 	)
 
 	return data, nil
 }
 
-// GetMajorGroupDetails 获取专业组详细信息
-func GetMajorGroupDetails(ctx context.Context, req *VoluntaryMajorGroupRequest) (*VoluntaryMajorGroup, error) {
+// buildCollegeTypeConditions 构建院校类型筛选条件
+func buildCollegeTypeConditions(qb *QueryBuilder, em *EnumMapper, collegeType string) error {
+	collegeTypes := strings.Split(collegeType, ",")
+	if len(collegeTypes) == 0 {
+		return nil
+	}
+
+	var ownershipConditions []string
+	var ownershipArgs []interface{}
+	var tagsConditions []string
+	var tagsArgs []interface{}
+
+	for _, colType := range collegeTypes {
+		colType = strings.TrimSpace(colType)
+
+		// 检查是否是办学性质
+		if ownershipVal, exists := em.MapOwnership(colType); exists {
+			ownershipConditions = append(ownershipConditions, "school_ownership = ?")
+			ownershipArgs = append(ownershipArgs, ownershipVal)
+		} else {
+			// 其他为院校标签
+			tagsConditions = append(tagsConditions, "positionUTF8(school_tags, ?) > 0")
+			tagsArgs = append(tagsArgs, colType)
+		}
+	}
+
+	// 合并各类条件
+	var typeConditions []string
+	if len(ownershipConditions) > 0 {
+		typeConditions = append(typeConditions, "("+strings.Join(ownershipConditions, " OR ")+")")
+		qb.args = append(qb.args, ownershipArgs...)
+	}
+	if len(tagsConditions) > 0 {
+		typeConditions = append(typeConditions, "("+strings.Join(tagsConditions, " OR ")+")")
+		qb.args = append(qb.args, tagsArgs...)
+	}
+
+	if len(typeConditions) > 0 {
+		qb.AddCondition("(" + strings.Join(typeConditions, " AND ") + ")")
+	}
+
+	return nil
+}
+
+// queryUniversityCount 查询符合条件的院校总数
+func queryUniversityCount(ctx context.Context, db *sql.DB, qb *QueryBuilder) (int64, error) {
+	countQuery := fmt.Sprintf(`SELECT count(DISTINCT school_name) 
+FROM %s
+WHERE 1=1
+`, TABLE)
+
+	// 复制查询条件到计数查询
+	countQB := NewQueryBuilder(countQuery)
+	countQB.conditions = append(countQB.conditions, qb.conditions...)
+	countQB.args = append(countQB.args, qb.args...)
+
+	finalCountQuery, countArgs := countQB.Build()
+
+	slog.Info("查询符合条件的院校总数", "query", finalCountQuery, "args", countArgs)
+
+	var total int64
+	err := db.QueryRowContext(ctx, finalCountQuery, countArgs...).Scan(&total)
+	if err != nil {
+		slog.Error("查询志愿总数失败", "error", err.Error())
+		return 0, err
+	}
+
+	return total, nil
+}
+
+// executeUniversityQuery 执行院校查询并返回结果
+func executeUniversityQuery(ctx context.Context, db *sql.DB, query string, args []interface{}, req *VoluntaryUniversityPriorityRequest) ([]VoluntaryUniversityItem, error) {
+	slog.Info("查询志愿院校分页", "query", query, "args", args)
+
+	rows, err := db.QueryContext(ctx, query, args...)
+	if err != nil {
+		slog.Error("查询志愿院校分页失败", "error", err.Error())
+		return nil, err
+	}
+	defer rows.Close()
+
+	// 处理结果
+	var resultItems []VoluntaryUniversityItem
+	schoolMap := make(map[string]*VoluntaryUniversityItem)
+	var schoolGroups []SchoolGroupPair
+
+	for rows.Next() {
+		var recruitCode, universityName, province, groupCode string
+		var category, tags string
+		var majorCount int
+
+		if err := rows.Scan(&recruitCode, &universityName, &province, &category, &tags, &groupCode, &majorCount); err != nil {
+			slog.Error("扫描志愿院校结果失败", "error", err.Error())
+			continue
+		}
+
+		// 检查学校是否已经存在
+		_, exists := schoolMap[universityName]
+		if !exists {
+			// 创建新的院校条目
+			newItem := &VoluntaryUniversityItem{
+				RecruitCode:    recruitCode,
+				UniversityName: universityName,
+				Province:       province,
+				Category:       strings.Split(category, ","),
+				Tags:           strings.Split(tags, ","),
+				MajorGroup:     []VoluntaryMajorGroup{},
+			}
+			schoolMap[universityName] = newItem
+		}
+
+		// 收集所有学校代码和专业组代码对
+		schoolGroups = append(schoolGroups, SchoolGroupPair{
+			SchoolCode: recruitCode,
+			GroupCode:  groupCode,
+		})
+	}
+
+	// 批量获取专业组信息
+	if len(schoolGroups) > 0 {
+		majorGroupReq := &VoluntaryMajorGroupRequest{
+			Province:  req.Province,
+			ProfileID: req.ProfileID,
+			Score:     req.Score,
+			Rank:      req.Rank,
+			Strategy:  req.Strategy,
+			Subjects:  req.Subjects,
+		}
+
+		majorGroupsMap, err := GetMajorGroupsDetail(ctx, schoolGroups, majorGroupReq)
+		if err != nil {
+			slog.Error("批量获取专业组信息失败", "error", err.Error())
+			return nil, fmt.Errorf("批量获取专业组信息失败: %w", err)
+		}
+
+		// 将专业组信息分配给对应的院校
+		for _, sg := range schoolGroups {
+			groupKey := fmt.Sprintf("%s-%s", sg.SchoolCode, sg.GroupCode)
+			if majorGroup, exists := majorGroupsMap[groupKey]; exists {
+				// 找到对应的学校
+				for _, schoolItem := range schoolMap {
+					if schoolItem.RecruitCode == sg.SchoolCode {
+						schoolItem.MajorGroup = append(schoolItem.MajorGroup, *majorGroup)
+						break
+					}
+				}
+			}
+		}
+	}
+
+	// 转换为结果切片
+	for _, item := range schoolMap {
+		resultItems = append(resultItems, *item)
+	}
+
+	return resultItems, nil
+}
+
+// GetMajorGroupsDetail 批量获取专业组详细信息
+func GetMajorGroupsDetail(ctx context.Context, schoolGroups []SchoolGroupPair, req *VoluntaryMajorGroupRequest) (map[string]*VoluntaryMajorGroup, error) {
 	startTime := time.Now()
 
 	// 获取ClickHouse连接
@@ -592,96 +788,306 @@ func GetMajorGroupDetails(ctx context.Context, req *VoluntaryMajorGroupRequest) 
 		return nil, fmt.Errorf("ClickHouse连接未初始化")
 	}
 
-	// 构建专业组查询
-	majorQuery := `
-		SELECT 
-			id,
-			plan_major_code as code,
-			plan_major_name as name,
-			admission_2024_min_score as min_score,
-			admission_2024_min_rank as min_rank,
-			admission_2024_plan_count as plan_num,
-			plan_tuition_fee as study_cost,
-			plan_duration as study_year,
-			plan_major_remark as remark
-		FROM gaokao_data
-		WHERE plan_school_code = ? AND plan_major_group_code = ?
-	`
+	// 初始化辅助器
+	enumMapper := NewEnumMapper()
+	profileManager := &ProfileManager{}
 
-	// 添加筛选条件
-	majorQueryConditions := []string{}
-	majorQueryArgs := []interface{}{req.SchoolCode, req.GroupCode}
-
-	// 处理用户档案
-	if req.ProfileID != "" {
-		// 查询用户档案
-		profile, err := GetUserProfileByID(req.ProfileID)
-		if err == nil && profile != nil {
-			// 使用用户档案中的信息
-			if profile.Province != "" {
-				majorQueryConditions = append(majorQueryConditions, "source_location = ?")
-				majorQueryArgs = append(majorQueryArgs, profile.Province)
-			}
-
-			if profile.Score > 0 {
-				req.Score = profile.Score
-			}
-
-			if profile.Rank > 0 {
-				req.Rank = profile.Rank
-			}
-
-			if len(profile.Subjects) > 0 {
-				req.Subjects = strings.Join(profile.Subjects, ",")
-			}
-		}
+	// 应用用户档案信息
+	if err := profileManager.ApplyProfileToRequest(req.ProfileID, req); err != nil {
+		slog.Warn("应用用户档案失败", "error", err.Error())
 	}
 
-	// 验证科目组合（必须包含物理或历史）
+	// 验证科目组合
 	if req.Subjects != "" {
 		if err := ValidateSubjects(req.Subjects); err != nil {
 			return nil, fmt.Errorf("科目验证失败: %w", err)
 		}
 	}
 
-	// 添加省份条件
+	// 构建批量查询条件
+	if len(schoolGroups) == 0 {
+		return make(map[string]*VoluntaryMajorGroup), nil
+	}
+
+	// 构建专业组查询 - 适配新表结构，支持批量查询
+	baseQuery := fmt.Sprintf(`SELECT 
+	school_code,
+	major_group_code,
+	id,
+	major_code as code,
+	major_name as name,
+	major_min_score_2024 as min_score,
+	major_min_rank_2024 as min_rank,
+	enrollment_plan_2024 as plan_num,
+	tuition_fee as study_cost,
+	study_duration as study_year,
+	major_description as remark
+FROM %s
+WHERE (school_code, major_group_code) IN (`, TABLE)
+
+	// 构建 IN 条件的参数占位符
+	var inConditions []string
+	var inArgs []interface{}
+	for _, sg := range schoolGroups {
+		inConditions = append(inConditions, "(?, ?)")
+		inArgs = append(inArgs, sg.SchoolCode, sg.GroupCode)
+	}
+
+	baseQuery += strings.Join(inConditions, ", ") + ")"
+
+	queryBuilder := NewQueryBuilder(baseQuery)
+	queryBuilder.args = append(queryBuilder.args, inArgs...)
+
+	// 处理省份条件
 	if req.Province != "" {
-		majorQueryConditions = append(majorQueryConditions, "source_location = ?")
-		majorQueryArgs = append(majorQueryArgs, req.Province)
+		if provinceVal, exists := enumMapper.MapProvince(req.Province); exists {
+			queryBuilder.AddCondition("source_province = ?", provinceVal)
+		}
 	}
 
-	// 处理科目类型过滤（物理或历史）
+	// 处理科目条件
 	if req.Subjects != "" {
-		subjectType := GetSubjectType(req.Subjects)
-		if subjectType != "" {
-			majorQueryConditions = append(majorQueryConditions, "plan_subject_type = ?")
-			majorQueryArgs = append(majorQueryArgs, subjectType)
+		subjectFilter, err := ParseSubjects(req.Subjects)
+		if err != nil {
+			return nil, fmt.Errorf("解析科目失败: %w", err)
 		}
 
-		// 添加其他科目限制
-		subjectBitmap := SubjectsToBitmap(req.Subjects)
-		if subjectBitmap > 0 {
-			majorQueryConditions = append(majorQueryConditions, "(plan_subject_restriction_bit = 0 OR bitAnd(plan_subject_restriction_bit, ?) = plan_subject_restriction_bit)")
-			majorQueryArgs = append(majorQueryArgs, subjectBitmap)
+		// 添加科目相关条件
+		subjectConditions, subjectArgs := subjectFilter.BuildSubjectConditions()
+		queryBuilder.AddConditions(subjectConditions, subjectArgs)
+	}
+
+	// 构建最终查询
+	finalQuery, finalArgs := queryBuilder.Build()
+	finalQuery += " ORDER BY school_code, major_group_code, major_name ASC"
+
+	slog.Info("批量查询专业组信息",
+		"schoolGroupCount", len(schoolGroups),
+		"query", finalQuery,
+		"args", finalArgs,
+	)
+
+	// 执行查询
+	majorRows, err := db.QueryContext(ctx, finalQuery, finalArgs...)
+	if err != nil {
+		slog.Error("批量查询专业信息失败", "error", err.Error())
+		return nil, fmt.Errorf("批量查询专业信息失败: %w", err)
+	}
+	defer majorRows.Close()
+
+	// 处理结果 - 按学校代码+专业组代码分组
+	result := make(map[string]*VoluntaryMajorGroup)
+	groupMajorsMap := make(map[string][]VoluntaryMajor)
+	groupProbabilityMap := make(map[string][]int32)
+
+	for majorRows.Next() {
+		var schoolCode, groupCode string
+		var id int32
+		var code, name string
+		var minScore, minRank sql.NullInt32
+		var planNum sql.NullInt32
+		var studyCost sql.NullString
+		var studyYear sql.NullInt32
+		var remark sql.NullString
+
+		if err := majorRows.Scan(&schoolCode, &groupCode, &id, &code, &name, &minScore, &minRank, &planNum, &studyCost, &studyYear, &remark); err != nil {
+			slog.Error("扫描专业信息失败", "error", err.Error())
+			continue
+		}
+
+		// 计算每个专业的录取概率和策略
+		var probability int32 = 50 // 默认50%
+		var strategy int32 = 1     // 默认稳
+
+		// 如果有用户分数，计算具体概率
+		if req.Score > 0 && minScore.Valid {
+			probability = CalculateProbability(req.Score, minScore.Int32)
+			strategy = GetStrategy(req.Score, minScore.Int32)
+		}
+
+		// 创建专业信息
+		major := VoluntaryMajor{
+			Code: code,
+			ID:   id,
+			Name: name,
+			MinScore: func() int32 {
+				if minScore.Valid {
+					return minScore.Int32
+				}
+				return 0
+			}(),
+			MinRank: func() int32 {
+				if minRank.Valid {
+					return minRank.Int32
+				}
+				return 0
+			}(),
+			PlanNum: func() string {
+				if planNum.Valid {
+					return fmt.Sprintf("%d", planNum.Int32)
+				}
+				return "0"
+			}(),
+			Probability: probability,
+			Remark: func() string {
+				if remark.Valid {
+					return remark.String
+				}
+				return ""
+			}(),
+			Strategy: strategy,
+			StudyCost: func() string {
+				if studyCost.Valid {
+					return studyCost.String
+				}
+				return "0"
+			}(),
+			StudyYear: func() string {
+				if studyYear.Valid {
+					return fmt.Sprintf("%d", studyYear.Int32)
+				}
+				return ""
+			}(),
+			Year: "2024",
+		}
+
+		// 按学校代码+专业组代码分组
+		groupKey := fmt.Sprintf("%s-%s", schoolCode, groupCode)
+		groupMajorsMap[groupKey] = append(groupMajorsMap[groupKey], major)
+		groupProbabilityMap[groupKey] = append(groupProbabilityMap[groupKey], probability)
+	}
+
+	// 创建专业组信息
+	for groupKey, majors := range groupMajorsMap {
+		probabilities := groupProbabilityMap[groupKey]
+
+		// 计算专业组的平均概率
+		var groupProbability int32 = 0
+		if len(probabilities) > 0 {
+			var sum int32 = 0
+			for _, prob := range probabilities {
+				sum += prob
+			}
+			groupProbability = sum / int32(len(probabilities))
+		}
+
+		// 根据策略参数筛选显示的专业
+		filteredMajors := majors
+		if req.Strategy > 0 {
+			var strategyMajors []VoluntaryMajor
+			for _, major := range majors {
+				if major.Strategy == req.Strategy {
+					strategyMajors = append(strategyMajors, major)
+				}
+			}
+
+			// 如果筛选后没有专业，则保留全部
+			if len(strategyMajors) > 0 {
+				filteredMajors = strategyMajors
+			}
+		}
+
+		// 从 groupKey 中解析出 groupCode
+		parts := strings.Split(groupKey, "-")
+		if len(parts) >= 2 {
+			groupCode := parts[1]
+
+			majorGroup := &VoluntaryMajorGroup{
+				GroupCode:   groupCode,
+				Major:       filteredMajors,
+				Probability: groupProbability,
+				Strategy:    req.Strategy,
+			}
+
+			result[groupKey] = majorGroup
 		}
 	}
 
-	// 添加条件到查询
-	if len(majorQueryConditions) > 0 {
-		majorQuery += " AND " + strings.Join(majorQueryConditions, " AND ")
+	slog.Info("批量获取专业组信息完成",
+		"schoolGroupCount", len(schoolGroups),
+		"resultCount", len(result),
+		"duration", time.Since(startTime).String(),
+	)
+
+	return result, nil
+}
+
+// GetMajorGroupDetail 获取专业组详细信息（保留原函数以兼容性）
+func GetMajorGroupDetail(ctx context.Context, req *VoluntaryMajorGroupRequest) (*VoluntaryMajorGroup, error) {
+	startTime := time.Now()
+
+	// 获取ClickHouse连接
+	db := database.GetClickHouse()
+	if db == nil {
+		return nil, fmt.Errorf("ClickHouse连接未初始化")
 	}
 
-	majorQuery += " ORDER BY plan_major_name ASC"
+	// 初始化辅助器
+	enumMapper := NewEnumMapper()
+	profileManager := &ProfileManager{}
+
+	// 应用用户档案信息
+	if err := profileManager.ApplyProfileToRequest(req.ProfileID, req); err != nil {
+		slog.Warn("应用用户档案失败", "error", err.Error())
+	}
+
+	// 验证科目组合
+	if req.Subjects != "" {
+		if err := ValidateSubjects(req.Subjects); err != nil {
+			return nil, fmt.Errorf("科目验证失败: %w", err)
+		}
+	}
+
+	// 构建专业组查询 - 适配新表结构
+	baseQuery := fmt.Sprintf(`SELECT 
+	id,
+	major_code as code,
+	major_name as name,
+	major_min_score_2024 as min_score,
+	major_min_rank_2024 as min_rank,
+	enrollment_plan_2024 as plan_num,
+	tuition_fee as study_cost,
+	study_duration as study_year,
+	major_description as remark
+FROM %s
+WHERE school_code = ? AND major_group_code = ?
+`, TABLE)
+
+	queryBuilder := NewQueryBuilder(baseQuery)
+	queryBuilder.args = append(queryBuilder.args, req.SchoolCode, req.GroupCode)
+
+	// 处理省份条件
+	if req.Province != "" {
+		if provinceVal, exists := enumMapper.MapProvince(req.Province); exists {
+			queryBuilder.AddCondition("source_province = ?", provinceVal)
+		}
+	}
+
+	// 处理科目条件
+	if req.Subjects != "" {
+		subjectFilter, err := ParseSubjects(req.Subjects)
+		if err != nil {
+			return nil, fmt.Errorf("解析科目失败: %w", err)
+		}
+
+		// 添加科目相关条件
+		subjectConditions, subjectArgs := subjectFilter.BuildSubjectConditions()
+		queryBuilder.AddConditions(subjectConditions, subjectArgs)
+	}
+
+	// 构建最终查询
+	finalQuery, finalArgs := queryBuilder.Build()
+	finalQuery += " ORDER BY major_name ASC"
 
 	slog.Info("查询专业组信息",
 		"schoolCode", req.SchoolCode,
 		"groupCode", req.GroupCode,
-		"query", majorQuery,
-		"args", majorQueryArgs,
+		"query", finalQuery,
+		"args", finalArgs,
 	)
 
 	// 执行查询
-	majorRows, err := db.QueryContext(ctx, majorQuery, majorQueryArgs...)
+	majorRows, err := db.QueryContext(ctx, finalQuery, finalArgs...)
 	if err != nil {
 		slog.Error("查询专业信息失败", "error", err.Error(), "schoolCode", req.SchoolCode, "groupCode", req.GroupCode)
 		return nil, fmt.Errorf("查询专业信息失败: %w", err)
@@ -697,8 +1103,8 @@ func GetMajorGroupDetails(ctx context.Context, req *VoluntaryMajorGroupRequest) 
 		var code, name string
 		var minScore, minRank sql.NullInt32
 		var planNum sql.NullInt32
-		var studyCost sql.NullInt32
-		var studyYear sql.NullString
+		var studyCost sql.NullString
+		var studyYear sql.NullInt32
 		var remark sql.NullString
 
 		if err := majorRows.Scan(&id, &code, &name, &minScore, &minRank, &planNum, &studyCost, &studyYear, &remark); err != nil {
@@ -752,13 +1158,13 @@ func GetMajorGroupDetails(ctx context.Context, req *VoluntaryMajorGroupRequest) 
 			Strategy: strategy,
 			StudyCost: func() string {
 				if studyCost.Valid {
-					return fmt.Sprintf("%d", studyCost.Int32)
+					return studyCost.String
 				}
 				return "0"
 			}(),
 			StudyYear: func() string {
 				if studyYear.Valid {
-					return studyYear.String
+					return fmt.Sprintf("%d", studyYear.Int32)
 				}
 				return ""
 			}(),

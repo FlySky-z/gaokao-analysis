@@ -5,24 +5,11 @@ import (
 	"os"
 
 	"gaokao-data-analysis/config"
-	"gaokao-data-analysis/database"
-	"gaokao-data-analysis/models"
-	"gaokao-data-analysis/routes"
+	routes "gaokao-data-analysis/router"
+	"gaokao-data-analysis/utils"
 )
 
 func main() {
-	// 初始化日志系统
-	logConfig, err := config.LoadLogConfig()
-	if err != nil {
-		slog.Error("加载日志配置失败", "error", err)
-		os.Exit(1)
-	}
-
-	if err := config.InitLogger(logConfig); err != nil {
-		slog.Error("初始化日志系统失败", "error", err)
-		os.Exit(1)
-	}
-
 	// 初始化配置和数据库连接
 	if err := config.InitConfig(); err != nil {
 		slog.Error("初始化配置失败", "error", err)
@@ -30,27 +17,17 @@ func main() {
 	}
 
 	// 记录应用程序启动信息
+	version := utils.GetEnv("APP_VERSION", "unknown")
 	slog.Info("应用程序初始化完成",
-		"version", "1.0.0",
-		"environment", os.Getenv("GIN_MODE"),
+		"version", version,
+		"environment", utils.GetEnv("GIN_MODE", "release"),
 	)
 
-	// Auto migrate database models
-	if err := database.GetMySQL().AutoMigrate(&models.UserProfile{}); err != nil {
-		slog.Error("数据库迁移失败", "error", err)
-		os.Exit(1)
-	}
-
-	slog.Info("数据库迁移成功")
-
-	// Setup and run the router
+	// 设置路由
 	r := routes.SetupRouter()
 
-	// 获取端口配置，如果没有则使用默认端口
-	port := os.Getenv("PORT")
-	if port == "" {
-		port = "8080"
-	}
+	// 获取端口配置
+	port := utils.GetEnv("PORT", "8080")
 
 	slog.Info("启动服务器", "port", port)
 	if err := r.Run(":" + port); err != nil {
